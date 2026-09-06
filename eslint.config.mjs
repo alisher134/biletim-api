@@ -9,6 +9,8 @@ export default tseslint.config(
     ignores: [
       "eslint.config.mjs",
       "prettier.config.mjs",
+      "commitlint.config.mjs",
+      "lint-staged.config.mjs",
       "dist",
       "node_modules",
       "coverage",
