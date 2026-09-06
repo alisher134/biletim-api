@@ -11,6 +11,8 @@ export default tseslint.config(
       "prettier.config.mjs",
       "commitlint.config.mjs",
       "lint-staged.config.mjs",
+      "prisma.config.ts",
+      "src/generated/**",
       "dist",
       "node_modules",
       "coverage",
