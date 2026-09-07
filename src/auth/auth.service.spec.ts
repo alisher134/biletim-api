@@ -23,6 +23,11 @@ jest.mock("argon2", () => ({
 const publicUser = {
   id: "user-1",
   email: "a@b.com",
+  firstName: "Alisher",
+  lastName: "Test",
+  isAdmin: false,
+  createdAt: new Date("2026-01-01"),
+  updatedAt: new Date("2026-01-01"),
 };
 
 describe("AuthService", () => {
@@ -86,12 +91,16 @@ describe("AuthService", () => {
     const result = await service.signUp({
       email: "A@B.com",
       password: "password1",
+      firstName: "Alisher",
+      lastName: "Test",
     });
 
-    expect(usersService.create).toHaveBeenCalledWith(
-      "a@b.com",
-      "hash:password1",
-    );
+    expect(usersService.create).toHaveBeenCalledWith({
+      email: "a@b.com",
+      passwordHash: "hash:password1",
+      firstName: "Alisher",
+      lastName: "Test",
+    });
     expect(result.accessToken).toBe("access-token");
     expect(result.refreshToken).toBe("refresh-token");
     expect(result.user.email).toBe("a@b.com");
