@@ -89,7 +89,7 @@ describe("AuthService", () => {
 
   it("signs up a user and returns a token pair", async () => {
     const result = await service.signUp({
-      email: "A@B.com",
+      email: "a@b.com",
       password: "password1",
       firstName: "Alisher",
       lastName: "Test",
@@ -111,12 +111,14 @@ describe("AuthService", () => {
       ...publicUser,
       passwordHash: "hash:password1",
     });
+    usersService.findPublicById.mockResolvedValue(publicUser);
 
     const result = await service.signIn({
       email: "a@b.com",
       password: "password1",
     });
 
+    expect(usersService.findPublicById).toHaveBeenCalledWith("user-1");
     expect(result.accessToken).toBe("access-token");
     expect(result.user.email).toBe("a@b.com");
   });
@@ -158,6 +160,18 @@ describe("AuthService", () => {
 
     await expect(
       service.refresh({ refreshToken: "bad-token" }),
+    ).rejects.toThrow(UnauthorizedException);
+  });
+
+  it("throws UnauthorizedException when the refresh token user no longer exists", async () => {
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: "missing",
+      email: "a@b.com",
+    });
+    usersService.findPublicById.mockResolvedValue(null);
+
+    await expect(
+      service.refresh({ refreshToken: "refresh-token" }),
     ).rejects.toThrow(UnauthorizedException);
   });
 });

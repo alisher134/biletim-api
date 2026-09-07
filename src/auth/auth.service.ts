@@ -31,21 +31,18 @@ export class AuthService {
   }
 
   async signUp(dto: SignUpDto): Promise<AuthTokensResponse> {
-    const email = dto.email.trim().toLowerCase();
     const passwordHash = await argon2.hash(dto.password);
     const user = await this.usersService.create({
-      email,
+      email: dto.email,
       passwordHash,
-      firstName: dto.firstName.trim(),
-      lastName: dto.lastName.trim(),
+      firstName: dto.firstName,
+      lastName: dto.lastName,
     });
     return this.createTokenPair(user);
   }
 
   async signIn(dto: SignInDto): Promise<AuthTokensResponse> {
-    const user = await this.usersService.findByEmail(
-      dto.email.trim().toLowerCase(),
-    );
+    const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
       throw new UnauthorizedException("Invalid credentials");
     }
@@ -55,15 +52,12 @@ export class AuthService {
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    return this.createTokenPair({
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      isAdmin: user.isAdmin,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
-    });
+    const publicUser = await this.usersService.findPublicById(user.id);
+    if (!publicUser) {
+      throw new UnauthorizedException("Invalid credentials");
+    }
+
+    return this.createTokenPair(publicUser);
   }
 
   async refresh(dto: RefreshTokenDto): Promise<AuthTokensResponse> {

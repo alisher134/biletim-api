@@ -6,7 +6,11 @@ import {
 import { Test, TestingModule } from "@nestjs/testing";
 import { Prisma } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
-import { UsersService } from "./users.service";
+import { USER_PUBLIC_SELECT, UsersService } from "./users.service";
+
+jest.mock("@nestjs/config", () => ({
+  ConfigService: class ConfigService {},
+}));
 
 jest.mock("argon2", () => ({
   hash: jest.fn((password: string) => Promise.resolve(`hash:${password}`)),
@@ -62,15 +66,7 @@ describe("UsersService", () => {
         firstName: "Alisher",
         lastName: "Test",
       },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        isAdmin: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: USER_PUBLIC_SELECT,
     });
   });
 
@@ -100,21 +96,26 @@ describe("UsersService", () => {
     });
 
     await expect(
-      service.updateProfile("1", { firstName: " New ", lastName: " Name " }),
+      service.updateProfile("1", { firstName: "New", lastName: "Name" }),
     ).resolves.toMatchObject({ firstName: "New", lastName: "Name" });
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: "1" },
       data: { firstName: "New", lastName: "Name" },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        isAdmin: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: USER_PUBLIC_SELECT,
     });
+  });
+
+  it("throws NotFoundException when updating a missing user", async () => {
+    prisma.user.update.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("Record not found", {
+        code: "P2025",
+        clientVersion: "test",
+      }),
+    );
+
+    await expect(
+      service.updateProfile("missing", { firstName: "New", lastName: "Name" }),
+    ).rejects.toThrow(NotFoundException);
   });
 
   it("changes password when the current password matches", async () => {

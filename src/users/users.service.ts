@@ -18,17 +18,11 @@ export const USER_PUBLIC_SELECT = {
   isAdmin: true,
   createdAt: true,
   updatedAt: true,
-} as const;
+} as const satisfies Prisma.UserSelect;
 
-export type PublicUser = {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  isAdmin: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-};
+export type PublicUser = Prisma.UserGetPayload<{
+  select: typeof USER_PUBLIC_SELECT;
+}>;
 
 export type CreateUserData = {
   email: string;
@@ -63,7 +57,7 @@ export class UsersService {
     }
   }
 
-  findByEmail(email: string) {
+  async findByEmail(email: string) {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
@@ -82,8 +76,8 @@ export class UsersService {
       return await this.prisma.user.update({
         where: { id: userId },
         data: {
-          firstName: dto.firstName.trim(),
-          lastName: dto.lastName.trim(),
+          firstName: dto.firstName,
+          lastName: dto.lastName,
         },
         select: USER_PUBLIC_SELECT,
       });

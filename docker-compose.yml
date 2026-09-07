@@ -1,15 +1,15 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: biletim-postgres
+    container_name: tarih-postgres
     restart: unless-stopped
     shm_size: 128mb
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-biletim}
-      POSTGRES_USER: ${POSTGRES_USER:-biletim}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-biletim}
+      POSTGRES_DB: ${POSTGRES_DB:-tarih}
+      POSTGRES_USER: ${POSTGRES_USER:-tarih}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tarih}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

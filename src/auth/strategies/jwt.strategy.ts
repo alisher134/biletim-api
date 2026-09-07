@@ -21,7 +21,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: JwtPayload): Promise<PublicUser> {
     const user = await this.usersService.findPublicById(payload.sub);
     if (!user) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException("Invalid access token");
     }
     return user;
   }
