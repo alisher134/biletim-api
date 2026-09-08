@@ -36,6 +36,7 @@ describe("Courses LMS (e2e)", () => {
 
   let adminAccessToken = "";
   let studentAccessToken = "";
+  let studentUserId = "";
   let courseId = "";
   let lessonId = "";
   let testId = "";
@@ -62,6 +63,20 @@ describe("Courses LMS (e2e)", () => {
       lastName: "Student",
     });
     studentAccessToken = studentAuth.accessToken;
+    studentUserId = studentAuth.user.id;
+
+    const plansResponse = await request(app.getHttpServer())
+      .get(apiPath("/subscription-plans"))
+      .expect(200);
+    const planId = readBody<Array<{ id: string; slug: string }>>(
+      plansResponse.body,
+    ).find((plan) => plan.slug === "1-month")!.id;
+
+    await request(app.getHttpServer())
+      .post(apiPath(`/admin/users/${studentUserId}/subscriptions`))
+      .set("Authorization", `Bearer ${adminAccessToken}`)
+      .send({ planId })
+      .expect(201);
   });
 
   afterAll(async () => {
@@ -165,6 +180,106 @@ describe("Courses LMS (e2e)", () => {
     expect(list.data.some((course) => course.id === courseId)).toBe(true);
   });
 
+  it("returns available courses in my courses before progress starts", async () => {
+    const response = await request(app.getHttpServer())
+      .get(apiPath("/courses/my"))
+      .set("Authorization", `Bearer ${studentAccessToken}`)
+      .expect(200);
+
+    const myCourses = readBody<
+      Array<{ course: { id: string }; progress: number; isStarted: boolean }>
+    >(response.body);
+
+    expect(myCourses.some((item) => item.course.id === courseId)).toBe(true);
+    expect(
+      myCourses.find((item) => item.course.id === courseId)?.isStarted,
+    ).toBe(false);
+  });
+
+  it("returns continue learning fallback for subscribed student", async () => {
+    const response = await request(app.getHttpServer())
+      .get(apiPath("/me/learning/continue"))
+      .set("Authorization", `Bearer ${studentAccessToken}`)
+      .expect(200);
+
+    const body = readBody<{
+      course: { id: string };
+      nextAction: { type: string; lessonId: string };
+    } | null>(response.body);
+
+    expect(body).not.toBeNull();
+    expect(body?.course.id).toBe(courseId);
+    expect(body?.nextAction.type).toBe("LESSON");
+    expect(body?.nextAction.lessonId).toBe(lessonId);
+  });
+
+  it("rejects test access before lesson completion", async () => {
+    const freshStudentEmail = `lms-fresh-${Date.now()}@example.com`;
+    const freshStudent = await signUp(app, {
+      email: freshStudentEmail,
+      password,
+      firstName: "Fresh",
+      lastName: "Student",
+    });
+
+    const plansResponse = await request(app.getHttpServer())
+      .get(apiPath("/subscription-plans"))
+      .expect(200);
+    const planId = readBody<Array<{ id: string; slug: string }>>(
+      plansResponse.body,
+    ).find((plan) => plan.slug === "1-month")!.id;
+
+    await request(app.getHttpServer())
+      .post(apiPath(`/admin/users/${freshStudent.user.id}/subscriptions`))
+      .set("Authorization", `Bearer ${adminAccessToken}`)
+      .send({ planId })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .get(apiPath(`/lessons/${lessonId}/test`))
+      .set("Authorization", `Bearer ${freshStudent.accessToken}`)
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .post(apiPath(`/tests/${testId}/attempts`))
+      .set("Authorization", `Bearer ${freshStudent.accessToken}`)
+      .expect(403);
+
+    await prisma.user.delete({ where: { email: freshStudentEmail } });
+  });
+
+  it("returns testId in course details and lesson test after completion", async () => {
+    const courseSlug = await prisma.course.findUniqueOrThrow({
+      where: { id: courseId },
+      select: { slug: true },
+    });
+
+    const courseDetails = await request(app.getHttpServer())
+      .get(apiPath(`/courses/${courseSlug.slug}`))
+      .expect(200);
+
+    const lessons = readBody<{
+      lessons: Array<{ id: string; testId: string | null; hasTest: boolean }>;
+    }>(courseDetails.body).lessons;
+
+    const lessonSummary = lessons.find((lesson) => lesson.id === lessonId);
+    expect(lessonSummary?.hasTest).toBe(true);
+    expect(lessonSummary?.testId).toBe(testId);
+
+    await request(app.getHttpServer())
+      .patch(apiPath(`/lessons/${lessonId}/progress`))
+      .set("Authorization", `Bearer ${studentAccessToken}`)
+      .send({ watchedSeconds: 95 })
+      .expect(200);
+
+    const lessonTest = await request(app.getHttpServer())
+      .get(apiPath(`/lessons/${lessonId}/test`))
+      .set("Authorization", `Bearer ${studentAccessToken}`)
+      .expect(200);
+
+    expect(readBody<{ id: string }>(lessonTest.body).id).toBe(testId);
+  });
+
   it("rejects test access for draft courses", async () => {
     const draftCourse = await request(app.getHttpServer())
       .post(apiPath("/admin/courses"))
@@ -225,17 +340,6 @@ describe("Courses LMS (e2e)", () => {
 
     const draftTestId = readBody<TestBody>(draftTest.body).id;
 
-    const student = await prisma.user.findUnique({
-      where: { email: studentEmail },
-    });
-
-    await prisma.courseEnrollment.create({
-      data: {
-        userId: student!.id,
-        courseId: draftCourseId,
-      },
-    });
-
     await request(app.getHttpServer())
       .get(apiPath(`/tests/${draftTestId}`))
       .set("Authorization", `Bearer ${studentAccessToken}`)
@@ -244,12 +348,7 @@ describe("Courses LMS (e2e)", () => {
     await prisma.course.delete({ where: { id: draftCourseId } });
   });
 
-  it("enrolls student, tracks progress and submits test", async () => {
-    await request(app.getHttpServer())
-      .post(apiPath(`/courses/${courseId}/enrollment`))
-      .set("Authorization", `Bearer ${studentAccessToken}`)
-      .expect(201);
-
+  it("grants subscribed student progress tracking and test submit", async () => {
     await request(app.getHttpServer())
       .patch(apiPath(`/lessons/${lessonId}/progress`))
       .set("Authorization", `Bearer ${studentAccessToken}`)

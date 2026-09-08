@@ -1,6 +1,10 @@
 import { BadRequestException } from "@nestjs/common";
 import { QuestionType } from "../generated/prisma/client";
 
+jest.mock("@nestjs/config", () => ({
+  ConfigService: class ConfigService {},
+}));
+
 jest.mock("../prisma/prisma.service", () => ({
   PrismaService: class PrismaService {},
 }));
@@ -14,6 +18,7 @@ import { TestsService } from "./tests.service";
 describe("TestsService", () => {
   const prisma = {
     lessonTest: { findUnique: jest.fn() },
+    userLessonProgress: { findUnique: jest.fn() },
     testAttempt: {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
@@ -55,7 +60,6 @@ describe("TestsService", () => {
     firstName: "Student",
     lastName: "User",
     isAdmin: false,
-    tokenVersion: 0,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -68,6 +72,7 @@ describe("TestsService", () => {
   });
 
   it("rejects duplicate question ids in submit payload", async () => {
+    prisma.userLessonProgress.findUnique.mockResolvedValue({ completed: true });
     prisma.testAttempt.findUnique.mockResolvedValue({
       id: "attempt-1",
       userId: user.id,

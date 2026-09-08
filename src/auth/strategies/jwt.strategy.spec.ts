@@ -1,6 +1,7 @@
 import { UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Test, TestingModule } from "@nestjs/testing";
+import { UnauthorizedApiException } from "../../common/errors/unauthorized-api.exception";
 import { UsersService } from "../../users/users.service";
 import { JwtStrategy } from "./jwt.strategy";
 
@@ -22,7 +23,7 @@ jest.mock("passport-jwt", () => ({
   Strategy: class Strategy {},
 }));
 
-const publicUser = {
+const authUser = {
   id: "user-1",
   email: "a@b.com",
   firstName: "Alisher",
@@ -36,7 +37,7 @@ const publicUser = {
 describe("JwtStrategy", () => {
   let strategy: JwtStrategy;
   const usersService = {
-    findPublicById: jest.fn(),
+    findAuthById: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -63,19 +64,38 @@ describe("JwtStrategy", () => {
   });
 
   it("returns the public user when the token subject exists", async () => {
-    usersService.findPublicById.mockResolvedValue(publicUser);
+    usersService.findAuthById.mockResolvedValue(authUser);
 
     await expect(
-      strategy.validate({ sub: "user-1", email: "a@b.com" }),
-    ).resolves.toEqual(publicUser);
-    expect(usersService.findPublicById).toHaveBeenCalledWith("user-1");
+      strategy.validate({ sub: "user-1", email: "a@b.com", tokenVersion: 0 }),
+    ).resolves.toEqual({
+      id: "user-1",
+      email: "a@b.com",
+      firstName: "Alisher",
+      lastName: "Test",
+      isAdmin: false,
+      createdAt: authUser.createdAt,
+      updatedAt: authUser.updatedAt,
+    });
+    expect(usersService.findAuthById).toHaveBeenCalledWith("user-1");
   });
 
   it("throws UnauthorizedException when the user does not exist", async () => {
-    usersService.findPublicById.mockResolvedValue(null);
+    usersService.findAuthById.mockResolvedValue(null);
 
     await expect(
-      strategy.validate({ sub: "missing", email: "a@b.com" }),
+      strategy.validate({ sub: "missing", email: "a@b.com", tokenVersion: 0 }),
     ).rejects.toThrow(UnauthorizedException);
+  });
+
+  it("throws UnauthorizedException when token version does not match", async () => {
+    usersService.findAuthById.mockResolvedValue({
+      ...authUser,
+      tokenVersion: 2,
+    });
+
+    await expect(
+      strategy.validate({ sub: "user-1", email: "a@b.com", tokenVersion: 0 }),
+    ).rejects.toThrow(UnauthorizedApiException);
   });
 });

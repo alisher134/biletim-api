@@ -113,15 +113,30 @@ export class TelegramUpdateService implements OnModuleInit {
     const text = message.text?.trim();
 
     if (text?.startsWith("/start")) {
+      const startPayload = text.split(/\s+/)[1]?.trim();
       const session = await this.sessionService.getSession(telegramId);
       const data = this.sessionService.getSessionData(session ?? { data: {} });
 
       if (!data.language) {
+        await this.sessionService.updateSession(telegramId, {
+          state: TelegramSessionState.START,
+          data: { startPayload },
+        });
         await this.sendLanguageSelection(chatId);
         return;
       }
 
       await this.sessionService.resetToStart(telegramId);
+
+      if (startPayload === "purchase") {
+        await this.startPurchaseFlow(
+          telegramId,
+          chatId,
+          this.getLanguage(data),
+        );
+        return;
+      }
+
       await this.sendMainMenu(chatId, this.getLanguage(data));
       return;
     }
@@ -200,6 +215,12 @@ export class TelegramUpdateService implements OnModuleInit {
     ) {
       const language: BotLanguage =
         data === TELEGRAM_CALLBACK.langKk ? "kk" : "ru";
+      const session = await this.sessionService.getSession(telegramId);
+      const sessionData = this.sessionService.getSessionData(
+        session ?? { data: {} },
+      );
+      const startPayload = sessionData.startPayload;
+
       await this.telegramApi.answerCallbackQuery(callback.id);
       await this.sessionService.updateSession(telegramId, {
         state: TelegramSessionState.START,
@@ -207,6 +228,12 @@ export class TelegramUpdateService implements OnModuleInit {
       });
       const messages = getBotMessages(language);
       await this.telegramApi.sendMessage(chatId, messages.languageChanged);
+
+      if (startPayload === "purchase") {
+        await this.startPurchaseFlow(telegramId, chatId, language);
+        return;
+      }
+
       await this.sendMainMenu(chatId, language);
       return;
     }
@@ -640,21 +667,23 @@ export class TelegramUpdateService implements OnModuleInit {
       return;
     }
 
-    const user = await this.telegramUsersService.upsertFromTelegram({
-      telegramId,
-      email: data.email,
-      firstName: data.firstName,
-      lastName: data.lastName,
-    }).catch(async (error) => {
-      if (error instanceof ConflictException) {
-        await this.telegramApi.sendMessage(
-          chatId,
-          getTelegramUserErrorMessage(lang, String(error.message)),
-        );
-        return null;
-      }
-      throw error;
-    });
+    const user = await this.telegramUsersService
+      .upsertFromTelegram({
+        telegramId,
+        email: data.email,
+        firstName: data.firstName,
+        lastName: data.lastName,
+      })
+      .catch(async (error) => {
+        if (error instanceof ConflictException) {
+          await this.telegramApi.sendMessage(
+            chatId,
+            getTelegramUserErrorMessage(lang, String(error.message)),
+          );
+          return null;
+        }
+        throw error;
+      });
 
     if (!user) {
       return;

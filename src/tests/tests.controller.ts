@@ -16,6 +16,15 @@ import { TestsService } from "./tests.service";
 export class TestsController {
   constructor(private readonly testsService: TestsService) {}
 
+  @Get("lessons/:lessonId/test")
+  @UseGuards(JwtAuthGuard)
+  getTestByLesson(
+    @Param("lessonId") lessonId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.testsService.getTestByLessonId(req.user, lessonId);
+  }
+
   @Get("tests/:testId")
   @UseGuards(JwtAuthGuard)
   getTest(@Param("testId") testId: string, @Req() req: AuthenticatedRequest) {

@@ -8,6 +8,11 @@ import {
 import { randomBytes } from "node:crypto";
 import * as argon2 from "argon2";
 import { Prisma } from "../generated/prisma/client";
+import {
+  mergeCourseEnrollments,
+  mergeCourseFavorites,
+  mergeLessonProgress,
+} from "../common/enrollment/ensure-enrollment";
 import { PrismaService } from "../prisma/prisma.service";
 import { USER_PUBLIC_SELECT, type PublicUser } from "./users.service";
 
@@ -182,6 +187,25 @@ export class TelegramUsersService {
       where: { userId: fromUserId },
       data: { userId: toUserId },
     });
+    await tx.testAttempt.updateMany({
+      where: { userId: fromUserId },
+      data: { userId: toUserId },
+    });
+    await tx.learningEvent.updateMany({
+      where: { userId: fromUserId },
+      data: { userId: toUserId },
+    });
+    await tx.uploadIntent.updateMany({
+      where: { userId: fromUserId },
+      data: { userId: toUserId },
+    });
+    await tx.passwordResetToken.updateMany({
+      where: { userId: fromUserId },
+      data: { userId: toUserId },
+    });
+    await mergeCourseEnrollments(tx, fromUserId, toUserId);
+    await mergeLessonProgress(tx, fromUserId, toUserId);
+    await mergeCourseFavorites(tx, fromUserId, toUserId);
   }
 
   async ensureTelegramLinked(userId: string, telegramId: string) {

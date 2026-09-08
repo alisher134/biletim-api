@@ -46,6 +46,9 @@ npm run start:dev
 
 The server listens on `PORT` from `.env` (default `8080`).
 
+Swagger UI: `/docs`  
+Global API prefix: `/api/v1`
+
 ## Environment variables
 
 | Variable | Description |
@@ -68,6 +71,29 @@ The server listens on `PORT` from `.env` (default `8080`).
 | `UPLOAD_MAX_VIDEO_SIZE_MB` | Max video upload size |
 | `UPLOAD_MAX_FILE_SIZE_MB` | Max material upload size |
 | `LESSON_COMPLETION_THRESHOLD_PERCENT` | Watch percent required to complete a lesson |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token for subscription payments |
+| `TELEGRAM_BOT_USERNAME` | Telegram bot username without `@` |
+| `TELEGRAM_MANAGER_CHAT_ID` | Telegram chat ID for payment review |
+| `TELEGRAM_PAYMENT_CARD_NUMBER` | Card number shown in Telegram checkout |
+| `TELEGRAM_PAYMENT_CARD_OWNER` | Card owner shown in Telegram checkout |
+| `TELEGRAM_WEBHOOK_URL` | Public webhook URL for Telegram bot |
+| `TELEGRAM_WEBHOOK_SECRET` | Secret token for Telegram webhook validation |
+| `PAYMENT_ORDER_EXPIRATION_MINUTES` | Order expiration in minutes |
+| `TELEGRAM_SESSION_TTL_HOURS` | Telegram session TTL in hours |
+
+## Monetization flow
+
+Web users purchase subscriptions through Telegram only:
+
+1. Sign in on the web app.
+2. Call `GET /subscriptions/purchase-link` to receive a deep link such as `https://t.me/your_bot?start=purchase`.
+3. Complete payment and upload the receipt in Telegram.
+4. After admin confirmation, `GET /subscriptions/me` returns the active subscription.
+
+Telegram-only accounts can set a web password through:
+
+- `POST /auth/forgot-password`
+- `POST /auth/reset-password`
 
 ## API
 
@@ -76,9 +102,18 @@ The server listens on `PORT` from `.env` (default `8080`).
 | `POST` | `/auth/sign-up` | No | Register a user |
 | `POST` | `/auth/sign-in` | No | Sign in and receive tokens |
 | `POST` | `/auth/refresh` | No | Refresh access token |
+| `POST` | `/auth/logout-all` | Bearer | Invalidate all sessions |
+| `POST` | `/auth/forgot-password` | No | Request password reset token |
+| `POST` | `/auth/reset-password` | No | Set a new password with reset token |
 | `GET` | `/auth/me` | Bearer | Get current user profile |
 | `PATCH` | `/users/me` | Bearer | Update first and last name |
 | `PATCH` | `/users/me/password` | Bearer | Change password |
+| `GET` | `/subscription-plans` | No | List active subscription plans |
+| `GET` | `/subscriptions/me` | Bearer | Get current and upcoming subscription |
+| `GET` | `/subscriptions/purchase-link` | Bearer | Get Telegram purchase deep link |
+| `GET` | `/me/learning/continue` | Bearer | Get continue-learning card |
+| `GET` | `/courses/:courseId/learning-summary` | Bearer | Get course learning summary |
+| `GET` | `/me/analytics/overview` | Bearer | Get personal learning analytics |
 | `GET` | `/admin/users` | Admin | List users with pagination and filters |
 | `GET` | `/admin/users/:id` | Admin | Get user by id |
 | `POST` | `/admin/users` | Admin | Create user |
@@ -91,18 +126,31 @@ The server listens on `PORT` from `.env` (default `8080`).
 | `POST/PATCH/DELETE` | `/admin/lessons/:lessonId/materials` | Admin | Manage lesson materials |
 | `POST/PATCH/DELETE` | `/admin/lessons/:lessonId/test` | Admin | Manage lesson tests |
 | `POST/PATCH/DELETE` | `/admin/tests/:testId/questions` | Admin | Manage test questions |
+| `POST` | `/admin/users/:userId/subscriptions` | Admin | Grant or extend subscription |
+| `GET` | `/admin/users/:userId/subscriptions` | Admin | List user subscriptions |
+| `DELETE` | `/admin/users/:userId/subscriptions/:subscriptionId` | Admin | Immediately revoke subscription |
+| `POST` | `/telegram/webhook` | Telegram secret | Telegram bot webhook |
 | `GET` | `/courses` | No | List published courses |
 | `GET` | `/courses/:slug` | Optional | Get published course details |
-| `GET` | `/courses/my` | Bearer | List enrolled courses |
+| `GET` | `/courses/my` | Bearer | List all available courses with progress |
 | `GET` | `/courses/favorites` | Bearer | List favorite courses |
-| `POST` | `/courses/:courseId/enrollment` | Bearer | Enroll in course |
 | `POST/DELETE` | `/courses/:courseId/favorite` | Bearer | Add/remove favorite |
 | `GET` | `/lessons/:lessonId/playback-url` | Bearer | Get presigned video URL |
+| `GET` | `/lessons/:lessonId/materials` | Bearer | List lesson materials |
 | `GET` | `/materials/:materialId/download-url` | Bearer | Get presigned material URL |
 | `PATCH/GET` | `/lessons/:lessonId/progress` | Bearer | Update/get lesson progress |
+| `GET` | `/lessons/:lessonId/test` | Bearer | Get lesson test without correct answers |
 | `GET` | `/tests/:testId` | Bearer | Get test without correct answers |
 | `POST` | `/tests/:testId/attempts` | Bearer | Start test attempt |
 | `POST` | `/test-attempts/:attemptId/submit` | Bearer | Submit test attempt |
+
+## Client notes
+
+- Access tokens include `tokenVersion`; after `logout-all` or password change, both access and refresh tokens become invalid immediately.
+- Presigned playback/download URLs expire after `MINIO_PRESIGNED_DOWNLOAD_TTL_SECONDS`; clients should re-request URLs for long sessions.
+- API error responses may include a machine-readable `code` field for frontend localization.
+- Lesson completion is computed server-side from watch progress; clients must not send `completed`.
+- Tests require the related lesson to be completed first.
 
 ## Scripts
 

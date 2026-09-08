@@ -25,6 +25,15 @@ export class LessonsController {
     return this.lessonsService.getPlaybackUrl(req.user, lessonId);
   }
 
+  @Get("lessons/:lessonId/materials")
+  @UseGuards(JwtAuthGuard)
+  listMaterials(
+    @Param("lessonId") lessonId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.lessonsService.listMaterials(req.user, lessonId);
+  }
+
   @Get("materials/:materialId/download-url")
   @UseGuards(JwtAuthGuard)
   getMaterialDownloadUrl(

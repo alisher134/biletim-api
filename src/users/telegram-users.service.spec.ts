@@ -23,10 +23,32 @@ describe("TelegramUsersService", () => {
     order: { updateMany: jest.fn() },
     userSubscription: { updateMany: jest.fn() },
     telegramSession: { updateMany: jest.fn() },
+    testAttempt: { updateMany: jest.fn() },
+    learningEvent: { updateMany: jest.fn() },
+    uploadIntent: { updateMany: jest.fn() },
+    passwordResetToken: { updateMany: jest.fn() },
+    courseEnrollment: {
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
+    userLessonProgress: {
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
+    courseFavorite: {
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
   };
 
   const prisma = {
-    $transaction: jest.fn(async (callback: (client: typeof tx) => unknown) =>
+    $transaction: jest.fn((callback: (client: typeof tx) => unknown) =>
       callback(tx),
     ),
     user: tx.user,

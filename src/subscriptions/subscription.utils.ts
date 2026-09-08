@@ -14,9 +14,27 @@ export function getRemainingDays(expiresAt: Date, now = new Date()): number {
 }
 
 export function isSubscriptionActive(
+  startsAt: Date,
   expiresAt: Date,
   status: string,
   now = new Date(),
 ): boolean {
-  return status === "ACTIVE" && expiresAt.getTime() > now.getTime();
+  return (
+    status === "ACTIVE" &&
+    startsAt.getTime() <= now.getTime() &&
+    expiresAt.getTime() > now.getTime()
+  );
+}
+
+export function isSubscriptionUpcoming(
+  startsAt: Date,
+  expiresAt: Date,
+  status: string,
+  now = new Date(),
+): boolean {
+  return (
+    status === "ACTIVE" &&
+    startsAt.getTime() > now.getTime() &&
+    expiresAt.getTime() > startsAt.getTime()
+  );
 }

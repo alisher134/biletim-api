@@ -4,6 +4,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
+import { createHash, randomBytes } from "node:crypto";
 import * as argon2 from "argon2";
 import { Prisma } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
@@ -16,13 +17,21 @@ export const USER_PUBLIC_SELECT = {
   firstName: true,
   lastName: true,
   isAdmin: true,
-  tokenVersion: true,
   createdAt: true,
   updatedAt: true,
 } as const satisfies Prisma.UserSelect;
 
+export const USER_AUTH_SELECT = {
+  ...USER_PUBLIC_SELECT,
+  tokenVersion: true,
+} as const satisfies Prisma.UserSelect;
+
 export type PublicUser = Prisma.UserGetPayload<{
   select: typeof USER_PUBLIC_SELECT;
+}>;
+
+export type AuthUser = Prisma.UserGetPayload<{
+  select: typeof USER_AUTH_SELECT;
 }>;
 
 export type CreateUserData = {
@@ -31,6 +40,20 @@ export type CreateUserData = {
   firstName: string;
   lastName: string;
 };
+
+export function toPublicUser(user: AuthUser): PublicUser {
+  return {
+    id: user.id,
+    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    isAdmin: user.isAdmin,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  };
+}
+
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 
 @Injectable()
 export class UsersService {
@@ -66,6 +89,13 @@ export class UsersService {
     return this.prisma.user.findUnique({
       where: { id },
       select: USER_PUBLIC_SELECT,
+    });
+  }
+
+  findAuthById(id: string): Promise<AuthUser | null> {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: USER_AUTH_SELECT,
     });
   }
 
@@ -129,5 +159,69 @@ export class UsersService {
       }
       throw error;
     }
+  }
+
+  async createPasswordResetToken(email: string): Promise<string | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { email: email.trim().toLowerCase() },
+      select: { id: true },
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    const token = randomBytes(32).toString("hex");
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
+
+    await this.prisma.$transaction([
+      this.prisma.passwordResetToken.updateMany({
+        where: { userId: user.id, usedAt: null },
+        data: { usedAt: new Date() },
+      }),
+      this.prisma.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          tokenHash,
+          expiresAt,
+        },
+      }),
+    ]);
+
+    return token;
+  }
+
+  async resetPasswordWithToken(
+    token: string,
+    newPassword: string,
+  ): Promise<void> {
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    const now = new Date();
+
+    const resetToken = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: { user: { select: { id: true } } },
+    });
+
+    if (!resetToken || resetToken.usedAt || resetToken.expiresAt <= now) {
+      throw new UnauthorizedException("Invalid reset token");
+    }
+
+    const passwordHash = await argon2.hash(newPassword);
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: resetToken.userId },
+        data: {
+          passwordHash,
+          tokenVersion: { increment: 1 },
+        },
+      }),
+      this.prisma.passwordResetToken.update({
+        where: { id: resetToken.id },
+        data: { usedAt: now },
+      }),
+    ]);
   }
 }

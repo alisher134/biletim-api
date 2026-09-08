@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -10,6 +9,9 @@ import {
   ensureCourseEnrollment,
   touchEnrollmentActivity,
 } from "../common/enrollment/ensure-enrollment";
+import { API_ERROR_CODE } from "../common/errors/api-error-codes";
+import { BadRequestApiException } from "../common/errors/bad-request-api.exception";
+import { ForbiddenApiException } from "../common/errors/forbidden-api.exception";
 import { recalculateCourseEnrollmentProgress } from "../common/progress/course-progress";
 import { LearningEventsService } from "../learning-events/learning-events.service";
 import { stripCorrectAnswers } from "../common/validation/question-validation";
@@ -26,6 +28,26 @@ export class TestsService {
     private readonly learningEvents: LearningEventsService,
     private readonly subscriptionsService: SubscriptionsService,
   ) {}
+
+  async getTestByLessonId(user: PublicUser, lessonId: string) {
+    const lesson = await this.prisma.lesson.findUnique({
+      where: { id: lessonId },
+      select: {
+        id: true,
+        test: { select: { id: true } },
+      },
+    });
+
+    if (!lesson) {
+      throw new NotFoundException(`Lesson ${lessonId} not found`);
+    }
+
+    if (!lesson.test) {
+      throw new NotFoundException(`Test for lesson ${lessonId} not found`);
+    }
+
+    return this.getTestForStudent(user, lesson.test.id);
+  }
 
   async getTestForStudent(user: PublicUser, testId: string) {
     const test = await this.prisma.lessonTest.findUnique({
@@ -56,6 +78,7 @@ export class TestsService {
       user,
       test.lesson.courseId,
     );
+    await this.assertLessonCompletedForTest(user.id, test.lesson.id);
 
     return {
       ...test,
@@ -87,6 +110,7 @@ export class TestsService {
       user,
       test.lesson.courseId,
     );
+    await this.assertLessonCompletedForTest(user.id, test.lesson.id);
 
     await this.ensureEnrollmentForTest(user.id, test.lesson.courseId);
 
@@ -102,7 +126,10 @@ export class TestsService {
           });
 
           if (attemptsCount >= test.attemptsLimit) {
-            throw new ForbiddenException("Test attempts limit reached");
+            throw new ForbiddenApiException(
+              API_ERROR_CODE.TEST_ATTEMPTS_LIMIT_REACHED,
+              "Test attempts limit reached",
+            );
           }
         }
 
@@ -119,17 +146,19 @@ export class TestsService {
             test.timeLimit != null &&
             this.isAttemptExpired(inProgressAttempt.startedAt, test.timeLimit)
           ) {
-            return {
-              attempt: await tx.testAttempt.update({
-                where: { id: inProgressAttempt.id },
-                data: {
-                  completedAt: new Date(),
-                  score: 0,
-                  passed: false,
-                },
-              }),
-              createdNew: false,
-            };
+            await tx.testAttempt.update({
+              where: { id: inProgressAttempt.id },
+              data: {
+                completedAt: new Date(),
+                score: 0,
+                passed: false,
+              },
+            });
+
+            throw new BadRequestApiException(
+              API_ERROR_CODE.TEST_TIME_LIMIT_EXCEEDED,
+              "Test time limit exceeded",
+            );
           }
 
           return { attempt: inProgressAttempt, createdNew: false };
@@ -220,12 +249,16 @@ export class TestsService {
       user,
       attempt.test.lesson.courseId,
     );
+    await this.assertLessonCompletedForTest(user.id, attempt.test.lesson.id);
 
     if (
       attempt.test.timeLimit != null &&
       this.isAttemptExpired(attempt.startedAt, attempt.test.timeLimit)
     ) {
-      throw new BadRequestException("Test time limit exceeded");
+      throw new BadRequestApiException(
+        API_ERROR_CODE.TEST_TIME_LIMIT_EXCEEDED,
+        "Test time limit exceeded",
+      );
     }
 
     const questionMap = new Map(
@@ -379,6 +412,28 @@ export class TestsService {
     );
 
     return result;
+  }
+
+  private async assertLessonCompletedForTest(
+    userId: string,
+    lessonId: string,
+  ): Promise<void> {
+    const progress = await this.prisma.userLessonProgress.findUnique({
+      where: {
+        userId_lessonId: {
+          userId,
+          lessonId,
+        },
+      },
+      select: { completed: true },
+    });
+
+    if (!progress?.completed) {
+      throw new ForbiddenApiException(
+        API_ERROR_CODE.LESSON_NOT_COMPLETED,
+        "Complete the lesson before taking the test",
+      );
+    }
   }
 
   private async ensureEnrollmentForTest(

@@ -57,7 +57,8 @@ describe("Users (e2e)", () => {
       .send({ currentPassword: password, newPassword: "password2" })
       .expect(204);
 
-    await signIn(app, { email, password: "password2" });
+    const auth = await signIn(app, { email, password: "password2" });
+    accessToken = auth.accessToken;
   });
 
   it("rejects password change with the wrong current password", async () => {

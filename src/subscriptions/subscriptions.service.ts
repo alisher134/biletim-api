@@ -1,10 +1,12 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { UserSubscriptionStatus } from "../generated/prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   getRemainingDays,
   getRemainingSeconds,
   isSubscriptionActive,
+  isSubscriptionUpcoming,
 } from "./subscription.utils";
 
 const SUBSCRIPTION_INCLUDE = {
@@ -20,9 +22,24 @@ const SUBSCRIPTION_INCLUDE = {
   },
 } as const;
 
+const ACTIVE_SUBSCRIPTION_WHERE = (userId: string, now: Date) => ({
+  userId,
+  status: UserSubscriptionStatus.ACTIVE,
+  startsAt: { lte: now },
+  expiresAt: { gt: now },
+});
+
 @Injectable()
 export class SubscriptionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly telegramBotUsername: string;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    config: ConfigService,
+  ) {
+    this.telegramBotUsername =
+      config.get<string>("TELEGRAM_BOT_USERNAME") ?? "";
+  }
 
   findActivePlans() {
     return this.prisma.subscriptionPlan.findMany({
@@ -40,15 +57,35 @@ export class SubscriptionsService {
     });
   }
 
+  getPurchaseLink() {
+    if (!this.telegramBotUsername) {
+      throw new NotFoundException("Telegram purchase is not configured");
+    }
+
+    return {
+      channel: "telegram" as const,
+      url: `https://t.me/${this.telegramBotUsername}?start=purchase`,
+      instructions:
+        "Open the Telegram bot, complete purchase, and upload your payment receipt there.",
+    };
+  }
+
   async getCurrentSubscription(userId: string) {
     const now = new Date();
     const subscription = await this.prisma.userSubscription.findFirst({
+      where: ACTIVE_SUBSCRIPTION_WHERE(userId, now),
+      orderBy: { expiresAt: "desc" },
+      include: SUBSCRIPTION_INCLUDE,
+    });
+
+    const upcomingSubscription = await this.prisma.userSubscription.findFirst({
       where: {
         userId,
         status: UserSubscriptionStatus.ACTIVE,
+        startsAt: { gt: now },
         expiresAt: { gt: now },
       },
-      orderBy: { expiresAt: "desc" },
+      orderBy: { startsAt: "asc" },
       include: SUBSCRIPTION_INCLUDE,
     });
 
@@ -56,27 +93,30 @@ export class SubscriptionsService {
       return {
         isActive: false,
         subscription: null,
+        upcomingSubscription: upcomingSubscription
+          ? this.toSubscriptionResponse(upcomingSubscription, now)
+          : null,
       };
     }
 
     return {
       isActive: isSubscriptionActive(
+        subscription.startsAt,
         subscription.expiresAt,
         subscription.status,
         now,
       ),
       subscription: this.toSubscriptionResponse(subscription, now),
+      upcomingSubscription: upcomingSubscription
+        ? this.toSubscriptionResponse(upcomingSubscription, now)
+        : null,
     };
   }
 
   async hasActiveSubscription(userId: string): Promise<boolean> {
     const now = new Date();
     const subscription = await this.prisma.userSubscription.findFirst({
-      where: {
-        userId,
-        status: UserSubscriptionStatus.ACTIVE,
-        expiresAt: { gt: now },
-      },
+      where: ACTIVE_SUBSCRIPTION_WHERE(userId, now),
       select: { id: true },
     });
 
@@ -100,8 +140,28 @@ export class SubscriptionsService {
     },
     now = new Date(),
   ) {
-    const remainingSeconds = getRemainingSeconds(subscription.expiresAt, now);
-    const remainingDays = getRemainingDays(subscription.expiresAt, now);
+    const isCurrentlyActive = isSubscriptionActive(
+      subscription.startsAt,
+      subscription.expiresAt,
+      subscription.status,
+      now,
+    );
+    const isUpcoming = isSubscriptionUpcoming(
+      subscription.startsAt,
+      subscription.expiresAt,
+      subscription.status,
+      now,
+    );
+    const remainingSeconds = isCurrentlyActive
+      ? getRemainingSeconds(subscription.expiresAt, now)
+      : isUpcoming
+        ? getRemainingSeconds(subscription.expiresAt, subscription.startsAt)
+        : 0;
+    const remainingDays = isCurrentlyActive
+      ? getRemainingDays(subscription.expiresAt, now)
+      : isUpcoming
+        ? getRemainingDays(subscription.expiresAt, subscription.startsAt)
+        : 0;
 
     return {
       id: subscription.id,
@@ -110,7 +170,8 @@ export class SubscriptionsService {
       expiresAt: subscription.expiresAt,
       remainingSeconds,
       remainingDays,
-      isExpired: remainingSeconds === 0,
+      isExpired: !isCurrentlyActive && !isUpcoming,
+      isUpcoming,
       plan: subscription.plan,
       monthlyPriceKzt: Math.round(
         subscription.plan.priceKzt / subscription.plan.durationMonths,

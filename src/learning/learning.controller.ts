@@ -10,7 +10,7 @@ export class LearningController {
   @Get("me/learning/continue")
   @UseGuards(JwtAuthGuard)
   getContinueLearning(@Req() req: AuthenticatedRequest) {
-    return this.learningService.getContinueLearning(req.user.id);
+    return this.learningService.getContinueLearning(req.user);
   }
 
   @Get("courses/:courseId/learning-summary")

@@ -28,7 +28,7 @@ export class CoursesController {
   @Get("my")
   @UseGuards(JwtAuthGuard)
   findMy(@Req() req: AuthenticatedRequest) {
-    return this.coursesService.findMyCourses(req.user.id);
+    return this.coursesService.findMyCourses(req.user);
   }
 
   @Get("favorites")
@@ -41,15 +41,6 @@ export class CoursesController {
   @UseGuards(OptionalJwtAuthGuard)
   findBySlug(@Param("slug") slug: string, @Req() req: AuthenticatedRequest) {
     return this.coursesService.findBySlug(slug, req.user);
-  }
-
-  @Post(":courseId/enrollment")
-  @UseGuards(JwtAuthGuard)
-  enroll(
-    @Param("courseId") courseId: string,
-    @Req() req: AuthenticatedRequest,
-  ) {
-    return this.coursesService.enroll(req.user.id, courseId);
   }
 
   @Post(":courseId/favorite")

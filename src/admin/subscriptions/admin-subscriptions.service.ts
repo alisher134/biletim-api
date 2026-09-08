@@ -32,6 +32,7 @@ export class AdminSubscriptionsService {
       where: {
         userId,
         status: UserSubscriptionStatus.ACTIVE,
+        startsAt: { lte: now },
         expiresAt: { gt: now },
       },
       orderBy: { expiresAt: "desc" },

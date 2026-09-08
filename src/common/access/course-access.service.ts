@@ -1,9 +1,7 @@
-import {
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { CourseStatus } from "../../generated/prisma/client";
+import { API_ERROR_CODE } from "../errors/api-error-codes";
+import { ForbiddenApiException } from "../errors/forbidden-api.exception";
 import { PrismaService } from "../../prisma/prisma.service";
 import { SubscriptionsService } from "../../subscriptions/subscriptions.service";
 import type { PublicUser } from "../../users/users.service";
@@ -40,20 +38,10 @@ export class CourseAccessService {
       return;
     }
 
-    const enrollment = await this.prisma.courseEnrollment.findUnique({
-      where: {
-        userId_courseId: {
-          userId: user.id,
-          courseId,
-        },
-      },
-    });
-
-    if (!enrollment) {
-      throw new ForbiddenException(
-        "Active subscription or course enrollment required",
-      );
-    }
+    throw new ForbiddenApiException(
+      API_ERROR_CODE.ACTIVE_SUBSCRIPTION_REQUIRED,
+      "Active subscription required",
+    );
   }
 
   async assertLessonPlaybackAccess(
@@ -87,22 +75,10 @@ export class CourseAccessService {
       return { lessonId: lesson.id, courseId: lesson.courseId };
     }
 
-    const enrollment = await this.prisma.courseEnrollment.findUnique({
-      where: {
-        userId_courseId: {
-          userId: user.id,
-          courseId: lesson.courseId,
-        },
-      },
-    });
-
-    if (!enrollment) {
-      throw new ForbiddenException(
-        "Active subscription or course enrollment required",
-      );
-    }
-
-    return { lessonId: lesson.id, courseId: lesson.courseId };
+    throw new ForbiddenApiException(
+      API_ERROR_CODE.ACTIVE_SUBSCRIPTION_REQUIRED,
+      "Active subscription required",
+    );
   }
 
   async assertMaterialDownloadAccess(

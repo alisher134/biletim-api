@@ -55,6 +55,25 @@ export class LessonsService {
     };
   }
 
+  async listMaterials(user: PublicUser, lessonId: string) {
+    await this.courseAccess.assertLessonPlaybackAccess(user, lessonId);
+
+    return this.prisma.lessonMaterial.findMany({
+      where: { lessonId },
+      orderBy: { order: "asc" },
+      select: {
+        id: true,
+        title: true,
+        type: true,
+        fileName: true,
+        fileSize: true,
+        order: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
   async getMaterialDownloadUrl(user: PublicUser, materialId: string) {
     await this.courseAccess.assertMaterialDownloadAccess(user, materialId);
 
@@ -122,13 +141,13 @@ export class LessonsService {
       watchedSeconds - previousWatchedSeconds,
     );
 
+    const completedByThreshold = isLessonCompletedByWatch(
+      watchedSeconds,
+      lesson.videoDuration,
+      this.completionThresholdPercent,
+    );
     const completed =
-      dto.completed ??
-      isLessonCompletedByWatch(
-        watchedSeconds,
-        lesson.videoDuration,
-        this.completionThresholdPercent,
-      );
+      previousProgress?.completed === true || completedByThreshold;
 
     const progress = await this.prisma.userLessonProgress.upsert({
       where: {

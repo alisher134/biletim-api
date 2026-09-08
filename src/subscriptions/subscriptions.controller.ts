@@ -17,4 +17,10 @@ export class SubscriptionsController {
   getMySubscription(@Req() req: AuthenticatedRequest) {
     return this.subscriptionsService.getCurrentSubscription(req.user.id);
   }
+
+  @Get("subscriptions/purchase-link")
+  @UseGuards(JwtAuthGuard)
+  getPurchaseLink() {
+    return this.subscriptionsService.getPurchaseLink();
+  }
 }

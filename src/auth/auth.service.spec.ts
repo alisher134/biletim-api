@@ -2,6 +2,7 @@ import { UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { Test, TestingModule } from "@nestjs/testing";
+import { UnauthorizedApiException } from "../common/errors/unauthorized-api.exception";
 import { UsersService } from "../users/users.service";
 import { AuthService } from "./auth.service";
 
@@ -20,7 +21,7 @@ jest.mock("argon2", () => ({
   ),
 }));
 
-const publicUser = {
+const authUser = {
   id: "user-1",
   email: "a@b.com",
   firstName: "Alisher",
@@ -36,7 +37,9 @@ describe("AuthService", () => {
   const usersService = {
     create: jest.fn(),
     findByEmail: jest.fn(),
-    findPublicById: jest.fn(),
+    findAuthById: jest.fn(),
+    createPasswordResetToken: jest.fn(),
+    resetPasswordWithToken: jest.fn(),
   };
   const jwtService = {
     signAsync: jest.fn(),
@@ -52,7 +55,16 @@ describe("AuthService", () => {
             : "access-token",
         ),
     );
-    usersService.create.mockResolvedValue(publicUser);
+    usersService.create.mockResolvedValue({
+      id: authUser.id,
+      email: authUser.email,
+      firstName: authUser.firstName,
+      lastName: authUser.lastName,
+      isAdmin: authUser.isAdmin,
+      createdAt: authUser.createdAt,
+      updatedAt: authUser.updatedAt,
+    });
+    usersService.findAuthById.mockResolvedValue(authUser);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -86,6 +98,7 @@ describe("AuthService", () => {
             : "access-token",
         ),
     );
+    usersService.findAuthById.mockResolvedValue(authUser);
   });
 
   it("signs up a user and returns a token pair", async () => {
@@ -105,21 +118,21 @@ describe("AuthService", () => {
     expect(result.accessToken).toBe("access-token");
     expect(result.refreshToken).toBe("refresh-token");
     expect(result.user.email).toBe("a@b.com");
+    expect(result.user).not.toHaveProperty("tokenVersion");
   });
 
   it("signs in a user and returns a token pair", async () => {
     usersService.findByEmail.mockResolvedValue({
-      ...publicUser,
+      ...authUser,
       passwordHash: "hash:password1",
     });
-    usersService.findPublicById.mockResolvedValue(publicUser);
 
     const result = await service.signIn({
       email: "a@b.com",
       password: "password1",
     });
 
-    expect(usersService.findPublicById).toHaveBeenCalledWith("user-1");
+    expect(usersService.findAuthById).toHaveBeenCalledWith("user-1");
     expect(result.accessToken).toBe("access-token");
     expect(result.user.email).toBe("a@b.com");
   });
@@ -134,7 +147,7 @@ describe("AuthService", () => {
 
   it("throws UnauthorizedException when the password does not match", async () => {
     usersService.findByEmail.mockResolvedValue({
-      ...publicUser,
+      ...authUser,
       passwordHash: "hash:other",
     });
 
@@ -149,7 +162,6 @@ describe("AuthService", () => {
       email: "a@b.com",
       tokenVersion: 0,
     });
-    usersService.findPublicById.mockResolvedValue(publicUser);
 
     const result = await service.refresh({ refreshToken: "refresh-token" });
 
@@ -165,20 +177,20 @@ describe("AuthService", () => {
     ).rejects.toThrow(UnauthorizedException);
   });
 
-  it("throws UnauthorizedException when token version does not match", async () => {
+  it("throws UnauthorizedApiException when token version does not match", async () => {
     jwtService.verifyAsync.mockResolvedValue({
       sub: "user-1",
       email: "a@b.com",
       tokenVersion: 0,
     });
-    usersService.findPublicById.mockResolvedValue({
-      ...publicUser,
+    usersService.findAuthById.mockResolvedValue({
+      ...authUser,
       tokenVersion: 1,
     });
 
     await expect(
       service.refresh({ refreshToken: "refresh-token" }),
-    ).rejects.toThrow(UnauthorizedException);
+    ).rejects.toThrow(UnauthorizedApiException);
   });
 
   it("throws UnauthorizedException when the refresh token user no longer exists", async () => {
@@ -187,10 +199,21 @@ describe("AuthService", () => {
       email: "a@b.com",
       tokenVersion: 0,
     });
-    usersService.findPublicById.mockResolvedValue(null);
+    usersService.findAuthById.mockResolvedValue(null);
 
     await expect(
       service.refresh({ refreshToken: "refresh-token" }),
     ).rejects.toThrow(UnauthorizedException);
+  });
+
+  it("creates a password reset token without exposing it", async () => {
+    usersService.createPasswordResetToken.mockResolvedValue("reset-token");
+
+    await expect(
+      service.forgotPassword({ email: "a@b.com" }),
+    ).resolves.toBeUndefined();
+    expect(usersService.createPasswordResetToken).toHaveBeenCalledWith(
+      "a@b.com",
+    );
   });
 });

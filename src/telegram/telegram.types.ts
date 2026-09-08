@@ -59,6 +59,7 @@ export type TelegramSessionData = {
   planId?: string;
   orderId?: string;
   pendingRejectOrderId?: string;
+  startPayload?: string;
 };
 
 export const TELEGRAM_CALLBACK = {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { App } from "supertest/types";
@@ -138,15 +139,47 @@ describe("Auth (e2e)", () => {
       .expect(401);
   });
 
-  it("invalidates refresh tokens after logout-all", async () => {
+  it("invalidates access and refresh tokens after logout-all", async () => {
     await request(app.getHttpServer())
       .post(apiPath("/auth/logout-all"))
       .set("Authorization", `Bearer ${accessToken}`)
       .expect(204);
 
     await request(app.getHttpServer())
+      .get(apiPath("/auth/me"))
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(401);
+
+    await request(app.getHttpServer())
       .post(apiPath("/auth/refresh"))
       .send({ refreshToken })
       .expect(401);
+  });
+
+  it("resets password via forgot/reset flow", async () => {
+    await request(app.getHttpServer())
+      .post(apiPath("/auth/forgot-password"))
+      .send({ email })
+      .expect(204);
+
+    const resetRecord = await prisma.passwordResetToken.findFirst({
+      where: { user: { email }, usedAt: null },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(resetRecord).not.toBeNull();
+
+    const token = "a".repeat(64);
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    await prisma.passwordResetToken.update({
+      where: { id: resetRecord!.id },
+      data: { tokenHash },
+    });
+
+    await request(app.getHttpServer())
+      .post(apiPath("/auth/reset-password"))
+      .send({ token, newPassword: "newpassword1" })
+      .expect(204);
+
+    await signIn(app, { email, password: "newpassword1" });
   });
 });

@@ -222,7 +222,7 @@ describe("Learning analytics (e2e)", () => {
     await request(app.getHttpServer())
       .patch(apiPath(`/lessons/${lessonId}/progress`))
       .set("Authorization", `Bearer ${studentAccessToken}`)
-      .send({ watchedSeconds: 95, completed: true })
+      .send({ watchedSeconds: 95 })
       .expect(200);
 
     const continueResponse = await request(app.getHttpServer())

@@ -1,5 +1,10 @@
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { NotFoundException } from "@nestjs/common";
 import { CourseStatus } from "../../generated/prisma/client";
+import { ForbiddenApiException } from "../errors/forbidden-api.exception";
+
+jest.mock("@nestjs/config", () => ({
+  ConfigService: class ConfigService {},
+}));
 
 jest.mock("../../prisma/prisma.service", () => ({
   PrismaService: class PrismaService {},
@@ -10,7 +15,6 @@ import { CourseAccessService } from "./course-access.service";
 describe("CourseAccessService", () => {
   const prisma = {
     course: { findUnique: jest.fn() },
-    courseEnrollment: { findUnique: jest.fn() },
     lesson: { findUnique: jest.fn() },
     lessonMaterial: { findUnique: jest.fn() },
   };
@@ -30,7 +34,6 @@ describe("CourseAccessService", () => {
     firstName: "Student",
     lastName: "User",
     isAdmin: false,
-    tokenVersion: 0,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -64,20 +67,17 @@ describe("CourseAccessService", () => {
     await expect(
       service.assertCourseContentAccess(student, "course-1"),
     ).resolves.toBeUndefined();
-
-    expect(prisma.courseEnrollment.findUnique).not.toHaveBeenCalled();
   });
 
-  it("rejects non-enrolled student on published course", async () => {
+  it("rejects student without active subscription on published course", async () => {
     prisma.course.findUnique.mockResolvedValue({
       id: "course-1",
       status: CourseStatus.PUBLISHED,
     });
-    prisma.courseEnrollment.findUnique.mockResolvedValue(null);
 
     await expect(
       service.assertCourseContentAccess(student, "course-1"),
-    ).rejects.toThrow(ForbiddenException);
+    ).rejects.toThrow(ForbiddenApiException);
   });
 
   it("hides draft lessons from students", async () => {

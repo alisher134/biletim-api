@@ -5,6 +5,7 @@ import {
 } from "../generated/prisma/client";
 import { CourseAccessService } from "../common/access/course-access.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { SubscriptionsService } from "../subscriptions/subscriptions.service";
 import type { PublicUser } from "../users/users.service";
 import {
   countCompletedLessons,
@@ -17,12 +18,13 @@ export class LearningService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly courseAccess: CourseAccessService,
+    private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
-  async getContinueLearning(userId: string) {
+  async getContinueLearning(user: PublicUser) {
     const enrollment = await this.prisma.courseEnrollment.findFirst({
       where: {
-        userId,
+        userId: user.id,
         status: CourseEnrollmentStatus.ACTIVE,
         course: { status: CourseStatus.PUBLISHED },
       },
@@ -38,13 +40,51 @@ export class LearningService {
       },
     });
 
-    if (!enrollment) {
+    if (enrollment) {
+      const courseContext = await this.loadCourseLearningContext(
+        user.id,
+        enrollment.courseId,
+      );
+
+      if (courseContext.state) {
+        return {
+          course: {
+            id: enrollment.course.id,
+            title: enrollment.course.title,
+            slug: enrollment.course.slug,
+            progress: enrollment.progress,
+          },
+          lesson: courseContext.state.lesson,
+          nextAction: courseContext.state.nextAction,
+        };
+      }
+    }
+
+    const hasAccess =
+      user.isAdmin ||
+      (await this.subscriptionsService.hasActiveSubscription(user.id));
+
+    if (!hasAccess) {
+      return null;
+    }
+
+    const firstCourse = await this.prisma.course.findFirst({
+      where: { status: CourseStatus.PUBLISHED },
+      orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+      },
+    });
+
+    if (!firstCourse) {
       return null;
     }
 
     const courseContext = await this.loadCourseLearningContext(
-      userId,
-      enrollment.courseId,
+      user.id,
+      firstCourse.id,
     );
 
     if (!courseContext.state) {
@@ -53,10 +93,10 @@ export class LearningService {
 
     return {
       course: {
-        id: enrollment.course.id,
-        title: enrollment.course.title,
-        slug: enrollment.course.slug,
-        progress: enrollment.progress,
+        id: firstCourse.id,
+        title: firstCourse.title,
+        slug: firstCourse.slug,
+        progress: 0,
       },
       lesson: courseContext.state.lesson,
       nextAction: courseContext.state.nextAction,

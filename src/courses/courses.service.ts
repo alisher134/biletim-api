@@ -6,6 +6,7 @@ import {
 import { CourseStatus, Prisma } from "../generated/prisma/client";
 import { clampPagination } from "../common/constants/pagination";
 import { PrismaService } from "../prisma/prisma.service";
+import { SubscriptionsService } from "../subscriptions/subscriptions.service";
 import type { PublicUser } from "../users/users.service";
 import type { ListCoursesQueryDto } from "./dto/list-courses-query.dto";
 
@@ -29,7 +30,10 @@ const PUBLIC_LESSON_SUMMARY_SELECT = {
 
 @Injectable()
 export class CoursesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly subscriptionsService: SubscriptionsService,
+  ) {}
 
   async findPublished(query: ListCoursesQueryDto) {
     const { page, limit } = clampPagination(query.page, query.limit);
@@ -108,52 +112,61 @@ export class CoursesService {
         updatedAt: lesson.updatedAt,
         hasMaterials: lesson._count.materials > 0,
         hasTest: lesson.test != null,
+        testId: lesson.test?.id ?? null,
       })),
     };
   }
 
-  async enroll(userId: string, courseId: string) {
-    const course = await this.prisma.course.findUnique({
-      where: { id: courseId },
-    });
+  async findMyCourses(user: PublicUser) {
+    const hasAccess =
+      user.isAdmin ||
+      (await this.subscriptionsService.hasActiveSubscription(user.id));
 
-    if (!course || course.status !== CourseStatus.PUBLISHED) {
-      throw new NotFoundException(`Course ${courseId} not found`);
+    if (!hasAccess) {
+      return [];
     }
 
-    try {
-      return await this.prisma.courseEnrollment.create({
-        data: {
-          userId,
-          courseId,
+    const [courses, enrollments] = await Promise.all([
+      this.prisma.course.findMany({
+        where: { status: CourseStatus.PUBLISHED },
+        orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          status: true,
+          order: true,
         },
-      });
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
-        throw new ConflictException("Already enrolled in this course");
-      }
-      throw error;
-    }
-  }
+      }),
+      this.prisma.courseEnrollment.findMany({
+        where: { userId: user.id },
+        select: {
+          courseId: true,
+          progress: true,
+          status: true,
+          enrolledAt: true,
+          lastActivityAt: true,
+          completedAt: true,
+        },
+      }),
+    ]);
 
-  async findMyCourses(userId: string) {
-    return this.prisma.courseEnrollment.findMany({
-      where: { userId },
-      include: {
-        course: {
-          select: {
-            id: true,
-            title: true,
-            slug: true,
-            status: true,
-            order: true,
-          },
-        },
-      },
-      orderBy: { enrolledAt: "desc" },
+    const enrollmentByCourseId = new Map(
+      enrollments.map((enrollment) => [enrollment.courseId, enrollment]),
+    );
+
+    return courses.map((course) => {
+      const enrollment = enrollmentByCourseId.get(course.id);
+
+      return {
+        course,
+        progress: enrollment?.progress ?? 0,
+        status: enrollment?.status ?? null,
+        enrolledAt: enrollment?.enrolledAt ?? null,
+        lastActivityAt: enrollment?.lastActivityAt ?? null,
+        completedAt: enrollment?.completedAt ?? null,
+        isStarted: enrollment != null,
+      };
     });
   }
 
@@ -201,7 +214,10 @@ export class CoursesService {
 
   async findFavorites(userId: string) {
     return this.prisma.courseFavorite.findMany({
-      where: { userId },
+      where: {
+        userId,
+        course: { status: CourseStatus.PUBLISHED },
+      },
       include: {
         course: {
           select: {

@@ -3,6 +3,7 @@ import {
   getRemainingDays,
   getRemainingSeconds,
   isSubscriptionActive,
+  isSubscriptionUpcoming,
 } from "./subscription.utils";
 
 describe("subscription.utils", () => {
@@ -31,12 +32,28 @@ describe("subscription.utils", () => {
   });
 
   it("checks active subscription status", () => {
-    const now = new Date("2026-01-01T00:00:00.000Z");
+    const now = new Date("2026-01-15T00:00:00.000Z");
+    const startsAt = new Date("2026-01-01T00:00:00.000Z");
     const future = new Date("2026-02-01T00:00:00.000Z");
     const past = new Date("2025-12-01T00:00:00.000Z");
 
-    expect(isSubscriptionActive(future, "ACTIVE", now)).toBe(true);
-    expect(isSubscriptionActive(past, "ACTIVE", now)).toBe(false);
-    expect(isSubscriptionActive(future, "CANCELLED", now)).toBe(false);
+    expect(isSubscriptionActive(startsAt, future, "ACTIVE", now)).toBe(true);
+    expect(isSubscriptionActive(startsAt, past, "ACTIVE", now)).toBe(false);
+    expect(isSubscriptionActive(startsAt, future, "CANCELLED", now)).toBe(
+      false,
+    );
+  });
+
+  it("detects upcoming subscriptions", () => {
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const startsAt = new Date("2026-02-01T00:00:00.000Z");
+    const expiresAt = new Date("2026-03-01T00:00:00.000Z");
+
+    expect(isSubscriptionUpcoming(startsAt, expiresAt, "ACTIVE", now)).toBe(
+      true,
+    );
+    expect(isSubscriptionActive(startsAt, expiresAt, "ACTIVE", now)).toBe(
+      false,
+    );
   });
 });

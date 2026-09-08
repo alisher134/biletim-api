@@ -49,6 +49,7 @@ describe("Subscriptions (e2e)", () => {
   let subscriptionId = "";
 
   beforeAll(async () => {
+    process.env.TELEGRAM_BOT_USERNAME = "tarih_bot";
     app = await createTestApp();
     prisma = app.get(PrismaService);
 
@@ -106,6 +107,17 @@ describe("Subscriptions (e2e)", () => {
     const body = readBody<SubscriptionMeBody>(response.body);
     expect(body.isActive).toBe(false);
     expect(body.subscription).toBeNull();
+  });
+
+  it("returns telegram purchase link for authenticated user", async () => {
+    const response = await request(app.getHttpServer())
+      .get(apiPath("/subscriptions/purchase-link"))
+      .set("Authorization", `Bearer ${studentAccessToken}`)
+      .expect(200);
+
+    const body = readBody<{ channel: string; url: string }>(response.body);
+    expect(body.channel).toBe("telegram");
+    expect(body.url).toBe("https://t.me/tarih_bot?start=purchase");
   });
 
   it("grants subscription via admin and returns remaining time", async () => {

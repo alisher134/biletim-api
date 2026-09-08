@@ -25,7 +25,6 @@ const publicUser = {
   firstName: "Alisher",
   lastName: "Test",
   isAdmin: false,
-  tokenVersion: 0,
   createdAt: new Date("2026-01-01"),
   updatedAt: new Date("2026-01-01"),
 };
@@ -38,6 +37,12 @@ describe("UsersService", () => {
       findUnique: jest.fn(),
       update: jest.fn(),
     },
+    passwordResetToken: {
+      updateMany: jest.fn(),
+      create: jest.fn(),
+      findUnique: jest.fn(),
+    },
+    $transaction: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -47,6 +52,12 @@ describe("UsersService", () => {
 
     service = module.get(UsersService);
     jest.clearAllMocks();
+    prisma.$transaction.mockImplementation((operations: unknown) => {
+      if (Array.isArray(operations)) {
+        return Promise.all(operations);
+      }
+      return operations;
+    });
   });
 
   it("creates a user without returning passwordHash", async () => {
@@ -164,5 +175,13 @@ describe("UsersService", () => {
         newPassword: "newpass12",
       }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it("returns null when creating reset token for unknown email", async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.createPasswordResetToken("missing@example.com"),
+    ).resolves.toBeNull();
   });
 });
