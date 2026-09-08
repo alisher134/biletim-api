@@ -32,6 +32,7 @@ export class SubscriptionsService {
         id: true,
         slug: true,
         title: true,
+        description: true,
         durationMonths: true,
         priceKzt: true,
         order: true,

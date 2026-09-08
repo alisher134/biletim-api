@@ -17,6 +17,7 @@ import { LessonsModule } from "./lessons/lessons.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { StorageModule } from "./storage/storage.module";
 import { SubscriptionsModule } from "./subscriptions/subscriptions.module";
+import { TelegramBotModule } from "./telegram/telegram.module";
 import { TestsModule } from "./tests/tests.module";
 import { UsersModule } from "./users/users.module";
 
@@ -42,6 +43,7 @@ import { UsersModule } from "./users/users.module";
     LearningModule,
     AnalyticsModule,
     SubscriptionsModule,
+    TelegramBotModule,
     TestsModule,
   ],
   providers: [

@@ -86,6 +86,19 @@ export class MockStorageService {
     return Promise.resolve();
   }
 
+  buildReceiptObjectKey(orderNumber: string, extension: string): string {
+    return `payments/receipts/${orderNumber}/test${extension}`;
+  }
+
+  putObject(
+    objectKey: string,
+    body: Buffer,
+    contentType: string,
+  ): Promise<void> {
+    this.seedObject(objectKey, body.length, contentType);
+    return Promise.resolve();
+  }
+
   checkHealth(): Promise<void> {
     return Promise.resolve();
   }

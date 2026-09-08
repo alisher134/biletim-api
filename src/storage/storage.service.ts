@@ -168,6 +168,23 @@ export class StorageService implements OnModuleInit {
     await Promise.all(objectKeys.map((key) => this.deleteObject(key)));
   }
 
+  buildReceiptObjectKey(orderNumber: string, extension: string): string {
+    const safeExtension = extension.startsWith(".")
+      ? extension.toLowerCase()
+      : `.${extension.toLowerCase()}`;
+    return `payments/receipts/${orderNumber}/${randomUUID()}${safeExtension}`;
+  }
+
+  async putObject(
+    objectKey: string,
+    body: Buffer,
+    contentType: string,
+  ): Promise<void> {
+    await this.client.putObject(this.bucket, objectKey, body, body.length, {
+      "Content-Type": contentType,
+    });
+  }
+
   private validateUploadRequest(
     purpose: UploadPurpose,
     contentType: string,
