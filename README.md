@@ -61,6 +61,12 @@ The server listens on `PORT` from `.env` (default `8080`).
 | `GET` | `/auth/me` | Bearer | Get current user profile |
 | `PATCH` | `/users/me` | Bearer | Update first and last name |
 | `PATCH` | `/users/me/password` | Bearer | Change password |
+| `GET` | `/admin/users` | Admin | List users with pagination and filters |
+| `GET` | `/admin/users/:id` | Admin | Get user by id |
+| `POST` | `/admin/users` | Admin | Create user |
+| `PATCH` | `/admin/users/:id` | Admin | Update user |
+| `DELETE` | `/admin/users/:id` | Admin | Delete user |
+| `PATCH` | `/admin/users/:id/password` | Admin | Reset user password |
 
 ## Scripts
 
@@ -91,11 +97,14 @@ npm run test:e2e
 
 ```text
 src/
+  admin/         # admin-only user management
   auth/          # sign-up, sign-in, refresh, JWT guard/strategy
   users/         # profile update and password change
   prisma/        # PrismaService wrapper
   generated/     # generated Prisma client (do not edit)
 test/
+  admin/
+    admin-users.e2e-spec.ts
   auth/
     auth.e2e-spec.ts
   users/
