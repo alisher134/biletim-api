@@ -18,10 +18,17 @@ NestJS API with JWT authentication, user profiles, and PostgreSQL via Prisma.
 cp .env.example .env
 ```
 
-2. Start PostgreSQL:
+2. Start PostgreSQL and MinIO:
+
+```bash
+npm run infra:up
+```
+
+Or separately:
 
 ```bash
 npm run db:up
+npm run storage:up
 ```
 
 3. Install dependencies and run migrations:
@@ -50,6 +57,17 @@ The server listens on `PORT` from `.env` (default `8080`).
 | `JWT_REFRESH_SECRET` | Secret for refresh tokens |
 | `JWT_REFRESH_EXPIRES_IN` | Refresh token lifetime, e.g. `7d` |
 | `CORS_ORIGIN` | Allowed frontend origin |
+| `MINIO_ENDPOINT` | MinIO host |
+| `MINIO_PORT` | MinIO API port |
+| `MINIO_USE_SSL` | Use HTTPS for MinIO |
+| `MINIO_ROOT_USER` | MinIO access key |
+| `MINIO_ROOT_PASSWORD` | MinIO secret key |
+| `MINIO_BUCKET` | Private bucket for videos and files |
+| `MINIO_PRESIGNED_UPLOAD_TTL_SECONDS` | Presigned upload URL lifetime |
+| `MINIO_PRESIGNED_DOWNLOAD_TTL_SECONDS` | Presigned playback/download URL lifetime |
+| `UPLOAD_MAX_VIDEO_SIZE_MB` | Max video upload size |
+| `UPLOAD_MAX_FILE_SIZE_MB` | Max material upload size |
+| `LESSON_COMPLETION_THRESHOLD_PERCENT` | Watch percent required to complete a lesson |
 
 ## API
 
@@ -67,6 +85,24 @@ The server listens on `PORT` from `.env` (default `8080`).
 | `PATCH` | `/admin/users/:id` | Admin | Update user |
 | `DELETE` | `/admin/users/:id` | Admin | Delete user |
 | `PATCH` | `/admin/users/:id/password` | Admin | Reset user password |
+| `POST` | `/admin/uploads/intent` | Admin | Get presigned upload URL |
+| `GET/POST/PATCH/DELETE` | `/admin/courses` | Admin | Manage courses |
+| `POST/PATCH/DELETE` | `/admin/courses/:courseId/lessons` | Admin | Manage lessons |
+| `POST/PATCH/DELETE` | `/admin/lessons/:lessonId/materials` | Admin | Manage lesson materials |
+| `POST/PATCH/DELETE` | `/admin/lessons/:lessonId/test` | Admin | Manage lesson tests |
+| `POST/PATCH/DELETE` | `/admin/tests/:testId/questions` | Admin | Manage test questions |
+| `GET` | `/courses` | No | List published courses |
+| `GET` | `/courses/:slug` | Optional | Get published course details |
+| `GET` | `/courses/my` | Bearer | List enrolled courses |
+| `GET` | `/courses/favorites` | Bearer | List favorite courses |
+| `POST` | `/courses/:courseId/enrollment` | Bearer | Enroll in course |
+| `POST/DELETE` | `/courses/:courseId/favorite` | Bearer | Add/remove favorite |
+| `GET` | `/lessons/:lessonId/playback-url` | Bearer | Get presigned video URL |
+| `GET` | `/materials/:materialId/download-url` | Bearer | Get presigned material URL |
+| `PATCH/GET` | `/lessons/:lessonId/progress` | Bearer | Update/get lesson progress |
+| `GET` | `/tests/:testId` | Bearer | Get test without correct answers |
+| `POST` | `/tests/:testId/attempts` | Bearer | Start test attempt |
+| `POST` | `/test-attempts/:attemptId/submit` | Bearer | Submit test attempt |
 
 ## Scripts
 
@@ -79,6 +115,8 @@ npm test            # unit tests
 npm run test:e2e    # end-to-end tests
 npm run test:cov    # coverage report
 npm run db:up       # start PostgreSQL in Docker
+npm run storage:up  # start MinIO in Docker
+npm run infra:up    # start PostgreSQL and MinIO
 npm run db:down     # stop PostgreSQL
 npm run prisma:migrate
 npm run prisma:studio

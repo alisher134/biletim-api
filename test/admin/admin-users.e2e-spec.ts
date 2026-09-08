@@ -7,7 +7,7 @@ import {
   readAdminUser,
   readPaginatedUsers,
 } from "../helpers/admin";
-import { createTestApp } from "../helpers/app";
+import { apiPath, createTestApp } from "../helpers/app";
 import { signIn } from "../helpers/auth";
 
 describe("Admin users (e2e)", () => {
@@ -49,7 +49,7 @@ describe("Admin users (e2e)", () => {
     const regularUserEmail = `regular-${Date.now()}@example.com`;
 
     await request(app.getHttpServer())
-      .post("/auth/sign-up")
+      .post(apiPath("/auth/sign-up"))
       .send({
         email: regularUserEmail,
         password,
@@ -64,7 +64,7 @@ describe("Admin users (e2e)", () => {
     });
 
     await request(app.getHttpServer())
-      .get("/admin/users")
+      .get(apiPath("/admin/users"))
       .set("Authorization", `Bearer ${regularAuth.accessToken}`)
       .expect(403);
 
@@ -73,7 +73,7 @@ describe("Admin users (e2e)", () => {
 
   it("lists users for admin", async () => {
     const response = await request(app.getHttpServer())
-      .get("/admin/users")
+      .get(apiPath("/admin/users"))
       .set("Authorization", `Bearer ${adminAccessToken}`)
       .expect(200);
 
@@ -84,7 +84,7 @@ describe("Admin users (e2e)", () => {
 
   it("creates a user", async () => {
     const response = await request(app.getHttpServer())
-      .post("/admin/users")
+      .post(apiPath("/admin/users"))
       .set("Authorization", `Bearer ${adminAccessToken}`)
       .send({
         email: userEmail,
@@ -102,7 +102,7 @@ describe("Admin users (e2e)", () => {
 
   it("returns a user by id", async () => {
     const response = await request(app.getHttpServer())
-      .get(`/admin/users/${managedUserId}`)
+      .get(apiPath(`/admin/users/${managedUserId}`))
       .set("Authorization", `Bearer ${adminAccessToken}`)
       .expect(200);
 
@@ -111,7 +111,7 @@ describe("Admin users (e2e)", () => {
 
   it("updates a user", async () => {
     const response = await request(app.getHttpServer())
-      .patch(`/admin/users/${managedUserId}`)
+      .patch(apiPath(`/admin/users/${managedUserId}`))
       .set("Authorization", `Bearer ${adminAccessToken}`)
       .send({ firstName: "Updated", lastName: "Name" })
       .expect(200);
@@ -125,7 +125,7 @@ describe("Admin users (e2e)", () => {
 
   it("resets a user password", async () => {
     await request(app.getHttpServer())
-      .patch(`/admin/users/${managedUserId}/password`)
+      .patch(apiPath(`/admin/users/${managedUserId}/password`))
       .set("Authorization", `Bearer ${adminAccessToken}`)
       .send({ newPassword: "password2" })
       .expect(204);
@@ -135,26 +135,26 @@ describe("Admin users (e2e)", () => {
 
   it("deletes a user", async () => {
     await request(app.getHttpServer())
-      .delete(`/admin/users/${managedUserId}`)
+      .delete(apiPath(`/admin/users/${managedUserId}`))
       .set("Authorization", `Bearer ${adminAccessToken}`)
       .expect(204);
 
     await request(app.getHttpServer())
-      .get(`/admin/users/${managedUserId}`)
+      .get(apiPath(`/admin/users/${managedUserId}`))
       .set("Authorization", `Bearer ${adminAccessToken}`)
       .expect(404);
   });
 
   it("rejects deleting own admin account", async () => {
     const meResponse = await request(app.getHttpServer())
-      .get("/auth/me")
+      .get(apiPath("/auth/me"))
       .set("Authorization", `Bearer ${adminAccessToken}`)
       .expect(200);
 
     const me = readAdminUser(meResponse.body);
 
     await request(app.getHttpServer())
-      .delete(`/admin/users/${me.id}`)
+      .delete(apiPath(`/admin/users/${me.id}`))
       .set("Authorization", `Bearer ${adminAccessToken}`)
       .expect(400);
   });

@@ -26,6 +26,7 @@ const publicUser = {
   firstName: "Alisher",
   lastName: "Test",
   isAdmin: false,
+  tokenVersion: 0,
   createdAt: new Date("2026-01-01"),
   updatedAt: new Date("2026-01-01"),
 };
@@ -146,6 +147,7 @@ describe("AuthService", () => {
     jwtService.verifyAsync.mockResolvedValue({
       sub: "user-1",
       email: "a@b.com",
+      tokenVersion: 0,
     });
     usersService.findPublicById.mockResolvedValue(publicUser);
 
@@ -163,10 +165,27 @@ describe("AuthService", () => {
     ).rejects.toThrow(UnauthorizedException);
   });
 
+  it("throws UnauthorizedException when token version does not match", async () => {
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: "user-1",
+      email: "a@b.com",
+      tokenVersion: 0,
+    });
+    usersService.findPublicById.mockResolvedValue({
+      ...publicUser,
+      tokenVersion: 1,
+    });
+
+    await expect(
+      service.refresh({ refreshToken: "refresh-token" }),
+    ).rejects.toThrow(UnauthorizedException);
+  });
+
   it("throws UnauthorizedException when the refresh token user no longer exists", async () => {
     jwtService.verifyAsync.mockResolvedValue({
       sub: "missing",
       email: "a@b.com",
+      tokenVersion: 0,
     });
     usersService.findPublicById.mockResolvedValue(null);
 

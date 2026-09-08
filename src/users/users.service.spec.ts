@@ -25,6 +25,7 @@ const publicUser = {
   firstName: "Alisher",
   lastName: "Test",
   isAdmin: false,
+  tokenVersion: 0,
   createdAt: new Date("2026-01-01"),
   updatedAt: new Date("2026-01-01"),
 };
@@ -133,7 +134,10 @@ describe("UsersService", () => {
     ).resolves.toBeUndefined();
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: "1" },
-      data: { passwordHash: "hash:newpass12" },
+      data: {
+        passwordHash: "hash:newpass12",
+        tokenVersion: { increment: 1 },
+      },
     });
   });
 

@@ -6,7 +6,11 @@ import { UsersService, type PublicUser } from "../users/users.service";
 import type { SignInDto } from "./dto/sign-in.dto";
 import type { SignUpDto } from "./dto/sign-up.dto";
 import type { RefreshTokenDto } from "./dto/refresh-token.dto";
-import type { AuthTokensResponse, JwtPayload } from "./types";
+import type {
+  AuthTokensResponse,
+  JwtPayload,
+  RefreshTokenPayload,
+} from "./types";
 
 @Injectable()
 export class AuthService {
@@ -61,13 +65,17 @@ export class AuthService {
   }
 
   async refresh(dto: RefreshTokenDto): Promise<AuthTokensResponse> {
-    let payload: JwtPayload;
+    let payload: RefreshTokenPayload;
     try {
-      payload = await this.jwtService.verifyAsync<JwtPayload>(
+      payload = await this.jwtService.verifyAsync<RefreshTokenPayload>(
         dto.refreshToken,
         { secret: this.refreshSecret },
       );
     } catch {
+      throw new UnauthorizedException("Invalid refresh token");
+    }
+
+    if (typeof payload.tokenVersion !== "number") {
       throw new UnauthorizedException("Invalid refresh token");
     }
 
@@ -76,18 +84,30 @@ export class AuthService {
       throw new UnauthorizedException("Invalid refresh token");
     }
 
+    if (user.tokenVersion !== payload.tokenVersion) {
+      throw new UnauthorizedException("Invalid refresh token");
+    }
+
     return this.createTokenPair(user);
+  }
+
+  async logoutAll(userId: string): Promise<void> {
+    await this.usersService.revokeAllSessions(userId);
   }
 
   private async createTokenPair(user: PublicUser): Promise<AuthTokensResponse> {
     const payload: JwtPayload = { sub: user.id, email: user.email };
+    const refreshPayload: RefreshTokenPayload = {
+      ...payload,
+      tokenVersion: user.tokenVersion,
+    };
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
         secret: this.accessSecret,
         expiresIn: this.accessExpiresIn,
       }),
-      this.jwtService.signAsync(payload, {
+      this.jwtService.signAsync(refreshPayload, {
         secret: this.refreshSecret,
         expiresIn: this.refreshExpiresIn,
       }),

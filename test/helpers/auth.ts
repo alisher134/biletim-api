@@ -1,6 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { App } from "supertest/types";
+import { apiPath } from "./app";
 
 export type AuthBody = {
   user: {
@@ -88,7 +89,7 @@ export async function signUp(
   params: SignUpParams,
 ): Promise<AuthBody> {
   const response = await request(app.getHttpServer())
-    .post("/auth/sign-up")
+    .post(apiPath("/auth/sign-up"))
     .send(params)
     .expect(201);
 
@@ -100,7 +101,7 @@ export async function signIn(
   params: Pick<SignUpParams, "email" | "password">,
 ): Promise<AuthBody> {
   const response = await request(app.getHttpServer())
-    .post("/auth/sign-in")
+    .post(apiPath("/auth/sign-in"))
     .send(params)
     .expect(200);
 

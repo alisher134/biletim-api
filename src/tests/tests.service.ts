@@ -1,0 +1,457 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { Prisma, QuestionType } from "../generated/prisma/client";
+import { CourseAccessService } from "../common/access/course-access.service";
+import {
+  ensureCourseEnrollment,
+  touchEnrollmentActivity,
+} from "../common/enrollment/ensure-enrollment";
+import { recalculateCourseEnrollmentProgress } from "../common/progress/course-progress";
+import { LearningEventsService } from "../learning-events/learning-events.service";
+import { stripCorrectAnswers } from "../common/validation/question-validation";
+import { PrismaService } from "../prisma/prisma.service";
+import type { PublicUser } from "../users/users.service";
+import type { SubmitTestAttemptDto } from "./dto/submit-test-attempt.dto";
+import { SubscriptionsService } from "../subscriptions/subscriptions.service";
+
+@Injectable()
+export class TestsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly courseAccess: CourseAccessService,
+    private readonly learningEvents: LearningEventsService,
+    private readonly subscriptionsService: SubscriptionsService,
+  ) {}
+
+  async getTestForStudent(user: PublicUser, testId: string) {
+    const test = await this.prisma.lessonTest.findUnique({
+      where: { id: testId },
+      include: {
+        lesson: {
+          select: {
+            id: true,
+            courseId: true,
+          },
+        },
+        questions: {
+          orderBy: { order: "asc" },
+          include: {
+            options: {
+              orderBy: { order: "asc" },
+            },
+          },
+        },
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException(`Test ${testId} not found`);
+    }
+
+    await this.courseAccess.assertCourseContentAccess(
+      user,
+      test.lesson.courseId,
+    );
+
+    return {
+      ...test,
+      questions: test.questions.map((question) => ({
+        ...question,
+        options: stripCorrectAnswers(question.options),
+      })),
+    };
+  }
+
+  async startAttempt(user: PublicUser, testId: string) {
+    const test = await this.prisma.lessonTest.findUnique({
+      where: { id: testId },
+      include: {
+        lesson: {
+          select: {
+            id: true,
+            courseId: true,
+          },
+        },
+      },
+    });
+
+    if (!test) {
+      throw new NotFoundException(`Test ${testId} not found`);
+    }
+
+    await this.courseAccess.assertCourseContentAccess(
+      user,
+      test.lesson.courseId,
+    );
+
+    await this.ensureEnrollmentForTest(user.id, test.lesson.courseId);
+
+    const { attempt, createdNew } = await this.prisma.$transaction(
+      async (tx) => {
+        if (test.attemptsLimit != null) {
+          const attemptsCount = await tx.testAttempt.count({
+            where: {
+              userId: user.id,
+              testId,
+              completedAt: { not: null },
+            },
+          });
+
+          if (attemptsCount >= test.attemptsLimit) {
+            throw new ForbiddenException("Test attempts limit reached");
+          }
+        }
+
+        const inProgressAttempt = await tx.testAttempt.findFirst({
+          where: {
+            userId: user.id,
+            testId,
+            completedAt: null,
+          },
+        });
+
+        if (inProgressAttempt) {
+          if (
+            test.timeLimit != null &&
+            this.isAttemptExpired(inProgressAttempt.startedAt, test.timeLimit)
+          ) {
+            return {
+              attempt: await tx.testAttempt.update({
+                where: { id: inProgressAttempt.id },
+                data: {
+                  completedAt: new Date(),
+                  score: 0,
+                  passed: false,
+                },
+              }),
+              createdNew: false,
+            };
+          }
+
+          return { attempt: inProgressAttempt, createdNew: false };
+        }
+
+        try {
+          return {
+            attempt: await tx.testAttempt.create({
+              data: {
+                userId: user.id,
+                testId,
+              },
+            }),
+            createdNew: true,
+          };
+        } catch (error) {
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === "P2002"
+          ) {
+            const existingAttempt = await tx.testAttempt.findFirst({
+              where: {
+                userId: user.id,
+                testId,
+                completedAt: null,
+              },
+            });
+
+            if (existingAttempt) {
+              return { attempt: existingAttempt, createdNew: false };
+            }
+          }
+
+          throw error;
+        }
+      },
+    );
+
+    if (createdNew) {
+      await this.learningEvents.recordTestStarted(
+        user.id,
+        test.lesson.courseId,
+        test.lesson.id,
+        testId,
+      );
+    }
+
+    await touchEnrollmentActivity(this.prisma, user.id, test.lesson.courseId);
+
+    return attempt;
+  }
+
+  async submitAttempt(
+    user: PublicUser,
+    attemptId: string,
+    dto: SubmitTestAttemptDto,
+  ) {
+    const attempt = await this.prisma.testAttempt.findUnique({
+      where: { id: attemptId },
+      include: {
+        test: {
+          include: {
+            lesson: {
+              select: {
+                id: true,
+                courseId: true,
+              },
+            },
+            questions: {
+              include: {
+                options: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!attempt || attempt.userId !== user.id) {
+      throw new NotFoundException(`Attempt ${attemptId} not found`);
+    }
+
+    if (attempt.completedAt) {
+      throw new BadRequestException("Attempt already submitted");
+    }
+
+    await this.courseAccess.assertCourseContentAccess(
+      user,
+      attempt.test.lesson.courseId,
+    );
+
+    if (
+      attempt.test.timeLimit != null &&
+      this.isAttemptExpired(attempt.startedAt, attempt.test.timeLimit)
+    ) {
+      throw new BadRequestException("Test time limit exceeded");
+    }
+
+    const questionMap = new Map(
+      attempt.test.questions.map((question) => [question.id, question]),
+    );
+
+    if (dto.answers.length !== attempt.test.questions.length) {
+      throw new BadRequestException("All questions must be answered");
+    }
+
+    const seenQuestionIds = new Set<string>();
+    let earnedPoints = 0;
+    let totalPoints = 0;
+    const answerCreates: Array<{
+      questionId: string;
+      isCorrect: boolean;
+      selectedOptions: { optionId: string }[];
+    }> = [];
+
+    for (const answer of dto.answers) {
+      if (seenQuestionIds.has(answer.questionId)) {
+        throw new BadRequestException(
+          `Duplicate answer for question ${answer.questionId}`,
+        );
+      }
+      seenQuestionIds.add(answer.questionId);
+
+      const question = questionMap.get(answer.questionId);
+      if (!question) {
+        throw new BadRequestException(`Unknown question ${answer.questionId}`);
+      }
+
+      totalPoints += question.points;
+
+      const optionIds = new Set(answer.optionIds);
+      const questionOptionIds = new Set(question.options.map((o) => o.id));
+
+      for (const optionId of optionIds) {
+        if (!questionOptionIds.has(optionId)) {
+          throw new BadRequestException(
+            `Option ${optionId} does not belong to question ${question.id}`,
+          );
+        }
+      }
+
+      this.validateAnswerShape(question.type, optionIds.size);
+
+      const correctOptionIds = new Set(
+        question.options.filter((option) => option.isCorrect).map((o) => o.id),
+      );
+
+      const isCorrect = this.isAnswerCorrect(
+        question.type,
+        optionIds,
+        correctOptionIds,
+      );
+
+      if (isCorrect) {
+        earnedPoints += question.points;
+      }
+
+      answerCreates.push({
+        questionId: question.id,
+        isCorrect,
+        selectedOptions: [...optionIds].map((optionId) => ({ optionId })),
+      });
+    }
+
+    const score =
+      totalPoints === 0 ? 0 : Math.round((earnedPoints / totalPoints) * 100);
+    const passed = score >= attempt.test.passingScore;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.testAttempt.updateMany({
+        where: {
+          id: attemptId,
+          userId: user.id,
+          completedAt: null,
+        },
+        data: {
+          score,
+          passed,
+          completedAt: new Date(),
+        },
+      });
+
+      if (updated.count === 0) {
+        throw new BadRequestException("Attempt already submitted");
+      }
+
+      await tx.testAnswer.createMany({
+        data: answerCreates.map((answer) => ({
+          attemptId,
+          questionId: answer.questionId,
+          isCorrect: answer.isCorrect,
+        })),
+      });
+
+      const createdAnswers = await tx.testAnswer.findMany({
+        where: { attemptId },
+        select: { id: true, questionId: true },
+      });
+      const answerIdByQuestionId = new Map(
+        createdAnswers.map((answer) => [answer.questionId, answer.id]),
+      );
+
+      const optionRows = answerCreates.flatMap((answer) =>
+        answer.selectedOptions.map((option) => ({
+          answerId: answerIdByQuestionId.get(answer.questionId)!,
+          optionId: option.optionId,
+        })),
+      );
+
+      if (optionRows.length > 0) {
+        await tx.testAnswerOption.createMany({ data: optionRows });
+      }
+
+      return tx.testAttempt.findUniqueOrThrow({ where: { id: attemptId } });
+    });
+
+    const enrollment = await this.prisma.courseEnrollment.findUnique({
+      where: {
+        userId_courseId: {
+          userId: user.id,
+          courseId: attempt.test.lesson.courseId,
+        },
+      },
+    });
+
+    if (enrollment) {
+      await recalculateCourseEnrollmentProgress(
+        this.prisma,
+        user.id,
+        attempt.test.lesson.courseId,
+      );
+    }
+
+    await this.learningEvents.recordTestSubmitted(
+      user.id,
+      attempt.test.lesson.courseId,
+      attempt.test.lesson.id,
+      attempt.testId,
+      score,
+      passed,
+    );
+
+    await touchEnrollmentActivity(
+      this.prisma,
+      user.id,
+      attempt.test.lesson.courseId,
+    );
+
+    return result;
+  }
+
+  private async ensureEnrollmentForTest(
+    userId: string,
+    courseId: string,
+  ): Promise<void> {
+    const existing = await this.prisma.courseEnrollment.findUnique({
+      where: { userId_courseId: { userId, courseId } },
+      select: { id: true },
+    });
+
+    if (existing) {
+      return;
+    }
+
+    const hasSubscription =
+      await this.subscriptionsService.hasActiveSubscription(userId);
+
+    if (!hasSubscription) {
+      return;
+    }
+
+    const { isNew } = await ensureCourseEnrollment(
+      this.prisma,
+      userId,
+      courseId,
+    );
+
+    if (isNew) {
+      await this.learningEvents.recordCourseStarted(userId, courseId);
+    }
+  }
+
+  private isAttemptExpired(startedAt: Date, timeLimitSeconds: number): boolean {
+    const elapsedSeconds = (Date.now() - startedAt.getTime()) / 1000;
+    return elapsedSeconds > timeLimitSeconds;
+  }
+
+  private validateAnswerShape(type: QuestionType, selectedCount: number) {
+    if (type === QuestionType.SINGLE_CHOICE && selectedCount !== 1) {
+      throw new BadRequestException(
+        "Single choice question requires exactly one option",
+      );
+    }
+
+    if (type === QuestionType.TRUE_FALSE && selectedCount !== 1) {
+      throw new BadRequestException(
+        "True/false question requires exactly one option",
+      );
+    }
+
+    if (type === QuestionType.MULTIPLE_CHOICE && selectedCount < 1) {
+      throw new BadRequestException(
+        "Multiple choice question requires at least one option",
+      );
+    }
+  }
+
+  private isAnswerCorrect(
+    type: QuestionType,
+    selectedOptionIds: Set<string>,
+    correctOptionIds: Set<string>,
+  ): boolean {
+    if (selectedOptionIds.size !== correctOptionIds.size) {
+      return false;
+    }
+
+    for (const optionId of selectedOptionIds) {
+      if (!correctOptionIds.has(optionId)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+}

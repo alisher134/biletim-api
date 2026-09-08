@@ -16,6 +16,7 @@ export const USER_PUBLIC_SELECT = {
   firstName: true,
   lastName: true,
   isAdmin: true,
+  tokenVersion: true,
   createdAt: true,
   updatedAt: true,
 } as const satisfies Prisma.UserSelect;
@@ -106,7 +107,27 @@ export class UsersService {
     const passwordHash = await argon2.hash(dto.newPassword);
     await this.prisma.user.update({
       where: { id: userId },
-      data: { passwordHash },
+      data: {
+        passwordHash,
+        tokenVersion: { increment: 1 },
+      },
     });
+  }
+
+  async revokeAllSessions(userId: string): Promise<void> {
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { tokenVersion: { increment: 1 } },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2025"
+      ) {
+        throw new NotFoundException(`User ${userId} not found`);
+      }
+      throw error;
+    }
   }
 }

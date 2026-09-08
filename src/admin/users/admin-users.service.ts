@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import * as argon2 from "argon2";
 import { Prisma } from "../../generated/prisma/client";
+import { clampPagination } from "../../common/constants/pagination";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PublicUser, USER_PUBLIC_SELECT } from "../../users/users.service";
 import type { CreateAdminUserDto } from "./dto/create-admin-user.dto";
@@ -28,8 +29,7 @@ export class AdminUsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(query: ListAdminUsersQueryDto): Promise<PaginatedUsers> {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const { page, limit } = clampPagination(query.page, query.limit);
     const sort = query.sort ?? "createdAt";
     const order = query.order ?? "desc";
 
@@ -200,7 +200,10 @@ export class AdminUsersService {
     try {
       await this.prisma.user.update({
         where: { id },
-        data: { passwordHash },
+        data: {
+          passwordHash,
+          tokenVersion: { increment: 1 },
+        },
       });
     } catch (error) {
       if (

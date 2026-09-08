@@ -2,7 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { App } from "supertest/types";
 import { PrismaService } from "../../src/prisma/prisma.service";
-import { createTestApp } from "../helpers/app";
+import { apiPath, createTestApp } from "../helpers/app";
 import { readAuthBody, readProfile, signIn, signUp } from "../helpers/auth";
 
 describe("Auth (e2e)", () => {
@@ -33,7 +33,7 @@ describe("Auth (e2e)", () => {
 
   it("returns 400 when sign-up payload is invalid", async () => {
     await request(app.getHttpServer())
-      .post("/auth/sign-up")
+      .post(apiPath("/auth/sign-up"))
       .send({
         email: "not-an-email",
         password: "short",
@@ -74,7 +74,7 @@ describe("Auth (e2e)", () => {
     });
 
     await request(app.getHttpServer())
-      .post("/auth/sign-up")
+      .post(apiPath("/auth/sign-up"))
       .send({
         email: duplicateEmail,
         password,
@@ -96,14 +96,14 @@ describe("Auth (e2e)", () => {
 
   it("rejects sign-in with invalid credentials", async () => {
     await request(app.getHttpServer())
-      .post("/auth/sign-in")
+      .post(apiPath("/auth/sign-in"))
       .send({ email, password: "wrong-password" })
       .expect(401);
   });
 
   it("returns the authenticated profile", async () => {
     const me = await request(app.getHttpServer())
-      .get("/auth/me")
+      .get(apiPath("/auth/me"))
       .set("Authorization", `Bearer ${accessToken}`)
       .expect(200);
 
@@ -111,12 +111,12 @@ describe("Auth (e2e)", () => {
   });
 
   it("rejects profile access without a bearer token", async () => {
-    await request(app.getHttpServer()).get("/auth/me").expect(401);
+    await request(app.getHttpServer()).get(apiPath("/auth/me")).expect(401);
   });
 
   it("refreshes tokens", async () => {
     const refresh = await request(app.getHttpServer())
-      .post("/auth/refresh")
+      .post(apiPath("/auth/refresh"))
       .send({ refreshToken })
       .expect(200);
 
@@ -126,15 +126,27 @@ describe("Auth (e2e)", () => {
     refreshToken = refreshBody.refreshToken;
 
     await request(app.getHttpServer())
-      .get("/auth/me")
+      .get(apiPath("/auth/me"))
       .set("Authorization", `Bearer ${accessToken}`)
       .expect(200);
   });
 
   it("rejects an invalid refresh token", async () => {
     await request(app.getHttpServer())
-      .post("/auth/refresh")
+      .post(apiPath("/auth/refresh"))
       .send({ refreshToken: "invalid-token" })
+      .expect(401);
+  });
+
+  it("invalidates refresh tokens after logout-all", async () => {
+    await request(app.getHttpServer())
+      .post(apiPath("/auth/logout-all"))
+      .set("Authorization", `Bearer ${accessToken}`)
+      .expect(204);
+
+    await request(app.getHttpServer())
+      .post(apiPath("/auth/refresh"))
+      .send({ refreshToken })
       .expect(401);
   });
 });

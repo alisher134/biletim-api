@@ -6,6 +6,10 @@ export type JwtPayload = {
   email: string;
 };
 
+export type RefreshTokenPayload = JwtPayload & {
+  tokenVersion: number;
+};
+
 export type AuthenticatedRequest = Request & {
   user: PublicUser;
 };

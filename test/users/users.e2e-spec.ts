@@ -2,7 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { App } from "supertest/types";
 import { PrismaService } from "../../src/prisma/prisma.service";
-import { createTestApp } from "../helpers/app";
+import { apiPath, createTestApp } from "../helpers/app";
 import { readProfile, signIn, signUp } from "../helpers/auth";
 
 describe("Users (e2e)", () => {
@@ -31,7 +31,7 @@ describe("Users (e2e)", () => {
 
   it("updates the authenticated profile", async () => {
     const updated = await request(app.getHttpServer())
-      .patch("/users/me")
+      .patch(apiPath("/users/me"))
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ firstName: "New", lastName: "Name" })
       .expect(200);
@@ -45,14 +45,14 @@ describe("Users (e2e)", () => {
 
   it("rejects profile update without a bearer token", async () => {
     await request(app.getHttpServer())
-      .patch("/users/me")
+      .patch(apiPath("/users/me"))
       .send({ firstName: "New", lastName: "Name" })
       .expect(401);
   });
 
   it("changes the authenticated password", async () => {
     await request(app.getHttpServer())
-      .patch("/users/me/password")
+      .patch(apiPath("/users/me/password"))
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ currentPassword: password, newPassword: "password2" })
       .expect(204);
@@ -62,7 +62,7 @@ describe("Users (e2e)", () => {
 
   it("rejects password change with the wrong current password", async () => {
     await request(app.getHttpServer())
-      .patch("/users/me/password")
+      .patch(apiPath("/users/me/password"))
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ currentPassword: "wrong-password", newPassword: "password3" })
       .expect(401);
@@ -70,7 +70,7 @@ describe("Users (e2e)", () => {
 
   it("returns 400 when password change payload is invalid", async () => {
     await request(app.getHttpServer())
-      .patch("/users/me/password")
+      .patch(apiPath("/users/me/password"))
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ currentPassword: "password2", newPassword: "short" })
       .expect(400);
